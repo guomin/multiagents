@@ -122,7 +122,8 @@ export class ExhibitionDesignGraphWithHuman {
           ...state,
           visualDesign,
           currentStep: "视觉设计完成",
-          messages: [...state.messages, "视觉设计已完成"]
+          messages: [...state.messages, "视觉设计已完成"],
+          revisionReason: undefined
         };
       } catch (error) {
         logger.error("❌ 视觉设计智能体执行失败", error as Error);
@@ -155,10 +156,87 @@ export class ExhibitionDesignGraphWithHuman {
           ...state,
           interactiveSolution,
           currentStep: "互动技术方案完成",
-          messages: [...state.messages, "互动技术方案已完成"]
+          messages: [...state.messages, "互动技术方案已完成"],
+          revisionReason: undefined
         };
       } catch (error) {
         logger.error("❌ 互动技术智能体执行失败", error as Error);
+        throw error;
+      }
+    };
+
+    // 并行节点：同时执行视觉设计和互动技术
+    const parallelDesignsNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
+      if (!state.conceptPlan) {
+        throw new Error("概念策划尚未完成，无法进行设计");
+      }
+
+      logger.info("🔄 启动并行设计流程（视觉设计 + 互动技术）...");
+
+      broadcastProgress(40, '并行设计中：视觉 + 互动技术...');
+
+      try {
+        // 确保 conceptPlan 存在（类型检查）
+        const conceptPlan = state.conceptPlan;
+        const feedback = state.revisionReason || state.humanFeedback;
+
+        // 并行执行两个设计任务
+        const [visualDesign, interactiveSolution] = await Promise.all([
+          (async () => {
+            logger.info("🎭 视觉设计智能体工作中...");
+            broadcastAgentStatus('visual', { status: 'running', startTime: new Date() });
+            const result = await this.visualDesigner.generateVisualDesign(
+              state.requirements,
+              conceptPlan,
+              feedback
+            );
+            broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
+            logger.info("✅ 视觉设计智能体完成");
+            return result;
+          })(),
+          (async () => {
+            logger.info("💻 互动技术智能体工作中...");
+            broadcastAgentStatus('interactive', { status: 'running', startTime: new Date() });
+            const result = await this.interactiveTech.generateInteractiveSolution(
+              state.requirements,
+              conceptPlan,
+              feedback
+            );
+            broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });
+            logger.info("✅ 互动技术智能体完成");
+            return result;
+          })()
+        ]);
+
+        logger.info("🎉 并行设计流程完成！");
+
+        return {
+          ...state,
+          visualDesign,
+          interactiveSolution,
+          currentStep: "并行设计完成",
+          messages: [
+            ...state.messages,
+            "视觉设计已完成",
+            "互动技术方案已完成"
+          ],
+          revisionReason: undefined
+        };
+      } catch (error) {
+        logger.error("❌ 并行设计流程失败", error as Error);
+
+        // 标记失败的节点
+        broadcastAgentStatus('visual', {
+          status: 'error',
+          endTime: new Date(),
+          error: error instanceof Error ? error.message : '未知错误'
+        });
+        broadcastAgentStatus('interactive', {
+          status: 'error',
+          endTime: new Date(),
+          error: error instanceof Error ? error.message : '未知错误'
+        });
+
         throw error;
       }
     };
@@ -300,6 +378,15 @@ export class ExhibitionDesignGraphWithHuman {
             interactiveSolution: undefined,
             budgetEstimate: undefined
           };
+        } else if (revisionTarget === "parallel_designs") {
+          // 并行修订：同时清理视觉设计和互动技术
+          return {
+            ...state,
+            ...revisionUpdate,
+            visualDesign: undefined,
+            interactiveSolution: undefined,
+            budgetEstimate: undefined
+          };
         } else if (revisionTarget === "visual_designer") {
           return {
             ...state,
@@ -358,8 +445,9 @@ export class ExhibitionDesignGraphWithHuman {
     // 添加节点
     workflow.addNode("curator", curatorNode);
     workflow.addNode("spatial_designer", spatialDesignerNode);
-    workflow.addNode("visual_designer", visualDesignerNode);
-    workflow.addNode("interactive_tech", interactiveTechNode);
+    workflow.addNode("parallel_designs", parallelDesignsNode); // 新增并行节点
+    workflow.addNode("visual_designer", visualDesignerNode);  // 保留用于单独修订
+    workflow.addNode("interactive_tech", interactiveTechNode); // 保留用于单独修订
     workflow.addNode("budget_controller", budgetControllerNode);
     workflow.addNode("supervisor_review", supervisorReviewNode);
     workflow.addNode("human_decision", humanDecisionNode);
@@ -384,9 +472,23 @@ export class ExhibitionDesignGraphWithHuman {
 
     // 线性流程到审核点
     workflow.addConditionalEdges("curator" as any, () => "spatial_designer");
-    workflow.addConditionalEdges("spatial_designer" as any, () => "visual_designer");
-    workflow.addConditionalEdges("visual_designer" as any, () => "interactive_tech");
+
+    // 空间设计 → 并行设计
+    workflow.addConditionalEdges("spatial_designer" as any, () => "parallel_designs");
+
+    // 并行设计 → 预算控制器
+    workflow.addConditionalEdges(
+      "parallel_designs" as any,
+      (state: ExhibitionState) => {
+        // 只有当两个设计都完成时才继续
+        return (state.visualDesign && state.interactiveSolution) ? "budget_controller" : END;
+      }
+    );
+
+    // 保留单独的节点用于修订
+    workflow.addConditionalEdges("visual_designer" as any, () => "budget_controller");
     workflow.addConditionalEdges("interactive_tech" as any, () => "budget_controller");
+
     workflow.addConditionalEdges("budget_controller" as any, () => "supervisor_review");
 
     // 审核后的条件路由
@@ -418,8 +520,9 @@ export class ExhibitionDesignGraphWithHuman {
           const targetMap: Record<string, string> = {
             'curator': 'curator',
             'spatial_designer': 'spatial_designer',
-            'visual_designer': 'visual_designer',
-            'interactive_tech': 'interactive_tech',
+            'parallel_designs': 'parallel_designs', // 同时修订视觉和互动技术
+            'visual_designer': 'visual_designer',  // 单独修订视觉设计
+            'interactive_tech': 'interactive_tech', // 单独修订互动技术
             'budget_controller': 'budget_controller'
           };
 
@@ -432,6 +535,7 @@ export class ExhibitionDesignGraphWithHuman {
       {
         curator: "curator" as any,
         spatial_designer: "spatial_designer" as any,
+        parallel_designs: "parallel_designs" as any, // 新增并行路由
         visual_designer: "visual_designer" as any,
         interactive_tech: "interactive_tech" as any,
         budget_controller: "budget_controller" as any,

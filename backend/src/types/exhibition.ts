@@ -93,6 +93,7 @@ export const QualityEvaluationSchema = z.object({
     'none',
     'curator',
     'spatial_designer',
+    'parallel_designs',
     'visual_designer',
     'interactive_tech',
     'budget_controller'

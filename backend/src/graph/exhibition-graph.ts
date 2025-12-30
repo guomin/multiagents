@@ -152,7 +152,8 @@ export class ExhibitionDesignGraph {
       try {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
           state.requirements,
-          state.conceptPlan
+          state.conceptPlan,
+          state.revisionReason
         );
 
         broadcastAgentStatus('visual', {
@@ -166,7 +167,8 @@ export class ExhibitionDesignGraph {
           ...state,
           visualDesign,
           currentStep: "视觉设计完成",
-          messages: [...state.messages, "视觉设计已完成"]
+          messages: [...state.messages, "视觉设计已完成"],
+          revisionReason: undefined
         };
       } catch (error) {
         broadcastAgentStatus('visual', {
@@ -197,7 +199,8 @@ export class ExhibitionDesignGraph {
       try {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
           state.requirements,
-          state.conceptPlan
+          state.conceptPlan,
+          state.revisionReason
         );
 
         broadcastAgentStatus('interactive', {
@@ -211,7 +214,8 @@ export class ExhibitionDesignGraph {
           ...state,
           interactiveSolution,
           currentStep: "互动技术方案完成",
-          messages: [...state.messages, "互动技术方案已完成"]
+          messages: [...state.messages, "互动技术方案已完成"],
+          revisionReason: undefined
         };
       } catch (error) {
         broadcastAgentStatus('interactive', {
@@ -221,6 +225,81 @@ export class ExhibitionDesignGraph {
         });
 
         logger.error("❌ 互动技术智能体执行失败", error as Error);
+        throw error;
+      }
+    };
+
+    // 并行节点：同时执行视觉设计和互动技术
+    const parallelDesignsNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
+      if (!state.conceptPlan) {
+        throw new Error("概念策划尚未完成，无法进行设计");
+      }
+
+      logger.info("🔄 启动并行设计流程（视觉设计 + 互动技术）...");
+
+      broadcastProgress(33, '并行设计中：视觉 + 互动技术...');
+
+      try {
+        // 确保 conceptPlan 存在（类型检查）
+        const conceptPlan = state.conceptPlan;
+
+        // 并行执行两个设计任务
+        const [visualDesign, interactiveSolution] = await Promise.all([
+          (async () => {
+            logger.info("🎭 视觉设计智能体工作中...");
+            broadcastAgentStatus('visual', { status: 'running', startTime: new Date() });
+            const result = await this.visualDesigner.generateVisualDesign(
+              state.requirements,
+              conceptPlan,
+              state.revisionReason
+            );
+            broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
+            logger.info("✅ 视觉设计智能体完成");
+            return result;
+          })(),
+          (async () => {
+            logger.info("💻 互动技术智能体工作中...");
+            broadcastAgentStatus('interactive', { status: 'running', startTime: new Date() });
+            const result = await this.interactiveTech.generateInteractiveSolution(
+              state.requirements,
+              conceptPlan,
+              state.revisionReason
+            );
+            broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });
+            logger.info("✅ 互动技术智能体完成");
+            return result;
+          })()
+        ]);
+
+        logger.info("🎉 并行设计流程完成！");
+
+        return {
+          ...state,
+          visualDesign,
+          interactiveSolution,
+          currentStep: "并行设计完成",
+          messages: [
+            ...state.messages,
+            "视觉设计已完成",
+            "互动技术方案已完成"
+          ],
+          revisionReason: undefined
+        };
+      } catch (error) {
+        logger.error("❌ 并行设计流程失败", error as Error);
+
+        // 标记失败的节点
+        broadcastAgentStatus('visual', {
+          status: 'error',
+          endTime: new Date(),
+          error: error instanceof Error ? error.message : '未知错误'
+        });
+        broadcastAgentStatus('interactive', {
+          status: 'error',
+          endTime: new Date(),
+          error: error instanceof Error ? error.message : '未知错误'
+        });
+
         throw error;
       }
     };
@@ -423,8 +502,9 @@ export class ExhibitionDesignGraph {
     // 添加节点到工作流
     workflow.addNode("curator", curatorNode);
     workflow.addNode("spatial_designer", spatialDesignerNode);
-    workflow.addNode("visual_designer", visualDesignerNode);
-    workflow.addNode("interactive_tech", interactiveTechNode);
+    workflow.addNode("parallel_designs", parallelDesignsNode); // 新增并行节点
+    workflow.addNode("visual_designer", visualDesignerNode);  // 保留用于单独修订
+    workflow.addNode("interactive_tech", interactiveTechNode); // 保留用于单独修订
     workflow.addNode("budget_controller", budgetControllerNode);
     workflow.addNode("supervisor", supervisorNode);
     workflow.addNode("iteration_controller", iterationControllerNode);
@@ -441,23 +521,33 @@ export class ExhibitionDesignGraph {
       }
     );
 
-    // 添加条件边 - 空间设计节点
+    // 添加条件边 - 空间设计节点 → 并行设计节点
     workflow.addConditionalEdges(
       "spatial_designer" as any,
       (state: ExhibitionState) => {
-        return state.spatialLayout ? "visual_designer" : END;
+        return state.spatialLayout ? "parallel_designs" : END;
       }
     );
 
-    // 添加条件边 - 视觉设计节点
+    // 添加条件边 - 并行设计节点 → 预算控制器
+    workflow.addConditionalEdges(
+      "parallel_designs" as any,
+      (state: ExhibitionState) => {
+        // 只有当两个设计都完成时才继续
+        return (state.visualDesign && state.interactiveSolution) ? "budget_controller" : END;
+      }
+    );
+
+    // 保留单独的视觉设计和互动技术节点用于修订时的单独执行
+    // 添加条件边 - 视觉设计节点（用于单独修订）
     workflow.addConditionalEdges(
       "visual_designer" as any,
       (state: ExhibitionState) => {
-        return state.visualDesign ? "interactive_tech" : END;
+        return state.visualDesign ? "budget_controller" : END;
       }
     );
 
-    // 添加条件边 - 互动技术节点
+    // 添加条件边 - 互动技术节点（用于单独修订）
     workflow.addConditionalEdges(
       "interactive_tech" as any,
       (state: ExhibitionState) => {
@@ -496,8 +586,9 @@ export class ExhibitionDesignGraph {
           const targetMap: Record<string, string> = {
             'curator': 'curator',
             'spatial_designer': 'spatial_designer',
-            'visual_designer': 'visual_designer',
-            'interactive_tech': 'interactive_tech',
+            'parallel_designs': 'parallel_designs', // 同时修订视觉和互动技术
+            'visual_designer': 'visual_designer',  // 单独修订视觉设计
+            'interactive_tech': 'interactive_tech', // 单独修订互动技术
             'budget_controller': 'budget_controller'
           };
 
@@ -515,6 +606,7 @@ export class ExhibitionDesignGraph {
       {
         curator: "curator" as any,
         spatial_designer: "spatial_designer" as any,
+        parallel_designs: "parallel_designs" as any, // 新增并行路由
         visual_designer: "visual_designer" as any,
         interactive_tech: "interactive_tech" as any,
         budget_controller: "budget_controller" as any,
