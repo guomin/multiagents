@@ -57,13 +57,15 @@ router.post('/exhibition/run', async (req, res) => {
 
   try {
     const requirements: ExhibitionRequirement = req.body
+    const maxIterations: number = req.body.maxIterations || 3
 
     logger.info('📨 收到展览设计请求', {
       requestId: req.id,
       projectId,
       title: requirements.title,
       theme: requirements.theme.substring(0, 50) + '...',
-      budget: `${requirements.budget?.total} ${requirements.budget?.currency}`
+      budget: `${requirements.budget?.total} ${requirements.budget?.currency}`,
+      maxIterations
     })
 
     // 记录工作流开始
@@ -118,7 +120,7 @@ router.post('/exhibition/run', async (req, res) => {
     console.log('📞 [API] 准备调用 runExhibitionAsync...')
 
     // 异步运行多智能体系统
-    runExhibitionAsync(requirements, projectId, req.id)
+    runExhibitionAsync(requirements, maxIterations, projectId, req.id || 'unknown')
 
     console.log('✅ [API] runExhibitionAsync 已调用（异步）')
 
@@ -150,7 +152,12 @@ router.post('/exhibition/run', async (req, res) => {
 })
 
 // 异步运行多智能体系统的函数
-async function runExhibitionAsync(requirements: ExhibitionRequirement, projectId: string, requestId: string) {
+async function runExhibitionAsync(
+  requirements: ExhibitionRequirement,
+  maxIterations: number,
+  projectId: string,
+  requestId: string
+) {
   const workflowStartTime = Date.now()
   let dbProject = null
   let dbWorkflow = null
@@ -158,6 +165,7 @@ async function runExhibitionAsync(requirements: ExhibitionRequirement, projectId
   console.log('🚀 [ASYNC] runExhibitionAsync 函数已调用')
   console.log('📋 [ASYNC] 项目ID:', projectId)
   console.log('📋 [ASYNC] 请求ID:', requestId)
+  console.log('🔄 [ASYNC] 最大迭代次数:', maxIterations)
 
   try {
     logger.info('🚀 开始运行多智能体图系统', { projectId, requestId })
@@ -232,7 +240,7 @@ async function runExhibitionAsync(requirements: ExhibitionRequirement, projectId
     console.log('🤖 [ASYNC] 正在获取 ExhibitionGraph 实例...')
     const graph = getExhibitionGraph()
     console.log('✅ [ASYNC] ExhibitionGraph 实例已获取，开始运行...')
-    const result = await graph.runExhibition(requirements)
+    const result = await graph.runExhibition(requirements, maxIterations)
     console.log('🎉 [ASYNC] 多智能体图系统运行完成！')
 
     const totalDuration = Date.now() - workflowStartTime

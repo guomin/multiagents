@@ -6,6 +6,7 @@ import { createServer } from 'http'
 import { exhibitionAPI } from './routes/exhibition'
 import { logsAPI } from './routes/logs'
 import { projectsAPI } from './routes/projects'
+import { humanDecisionAPI } from './routes/human-decision'
 import { ModelConfigFactory } from './config/model'
 import { requestLogger, errorLogger } from './middleware/request-logger'
 import { createLogger } from './utils/logger'
@@ -49,6 +50,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use('/api', exhibitionAPI)
 app.use('/api/logs', logsAPI)
 app.use('/api/projects', projectsAPI)
+app.use('/api', humanDecisionAPI)
 
 // WebSocket 服务器 - 用于实时推送智能体状态
 export const wss = new WebSocketServer({ server })

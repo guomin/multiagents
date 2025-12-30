@@ -21,7 +21,8 @@ export class InteractiveTechAgent {
 
   async generateInteractiveSolution(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan
+    conceptPlan: ConceptPlan,
+    revisionReason?: string
   ): Promise<InteractiveSolution> {
     const systemPrompt = `你是一位专业的展陈互动技术专家，具有丰富的多媒体设计和互动装置开发经验。你需要根据展览需求和预算，生成互动技术方案。
 
@@ -31,12 +32,12 @@ export class InteractiveTechAgent {
 3. 预算的合理性和性价比
 4. 技术实现的可行性
 
-输出格式：
+${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
 - technologies: 使用的主要技术列表
 - interactives: 具体的互动装置方案
 - technicalRequirements: 技术实现要求`;
 
-    const humanPrompt = `请为以下展览生成互动技术方案：
+    const humanPrompt = `请为以下展览${revisionReason ? '（根据反馈意见进行修订）' : ''}生成互动技术方案：
 
 展览信息：
 - 预算：${requirements.budget.total} ${requirements.budget.currency}
@@ -47,7 +48,7 @@ export class InteractiveTechAgent {
 - 核心概念：${conceptPlan.concept}
 - 叙事结构：${conceptPlan.narrative}
 
-请生成符合预算和主题的互动技术方案。`;
+${revisionReason ? `\n【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对互动技术方案进行针对性改进。\n` : ''}请生成符合预算和主题的互动技术方案。`;
 
     const messages = [
       new SystemMessage(systemPrompt),

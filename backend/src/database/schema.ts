@@ -12,7 +12,7 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // 创建数据库连接
-export const db = new Database(dbPath)
+export const db: Database.Database = new Database(dbPath)
 
 // 启用外键约束
 db.pragma('foreign_keys = ON')

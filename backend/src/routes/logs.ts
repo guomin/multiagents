@@ -50,7 +50,7 @@ router.get('/system', async (req, res) => {
       }))
     } else {
       // 获取系统日志
-      logs = await logger.getRecentLogs(level as LogLevel, parseInt(count))
+      logs = await logger.getRecentLogs(level as LogLevel, Number(count) || 100)
     }
 
     // 按类别过滤
@@ -128,7 +128,8 @@ router.get('/requests', (req, res) => {
     logsLogger.info('获取请求日志请求', { limit, requestId, stats })
 
     if (requestId) {
-      const requestLog = getRequestLog(requestId as string)
+      const allLogs = getRequestLogs(1000)
+      const requestLog = Array.isArray(allLogs) ? allLogs.find((log: any) => log.requestId === requestId) : null
       if (!requestLog) {
         return res.status(404).json({
           success: false,
@@ -153,7 +154,7 @@ router.get('/requests', (req, res) => {
         }
       })
     } else {
-      const logs = getRequestLogs(parseInt(limit))
+      const logs = getRequestLogs(Number(limit) || 100)
       res.json({
         success: true,
         data: logs,

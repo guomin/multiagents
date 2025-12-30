@@ -219,6 +219,53 @@
         </ElFormItem>
       </div>
 
+      <!-- 迭代优化配置 -->
+      <div class="mb-10">
+        <div class="flex items-center mb-8">
+          <div class="warning-gradient p-3 rounded-xl mr-4">
+            <ElIcon class="text-white text-xl"><Setting /></ElIcon>
+          </div>
+          <div>
+            <h2 class="text-2xl font-bold text-gradient">迭代优化配置</h2>
+            <p class="text-gray-600">配置质量评估和迭代优化参数</p>
+          </div>
+        </div>
+
+        <ElFormItem label="最大迭代次数">
+          <ElSlider
+            v-model="maxIterations"
+            :min="1"
+            :max="5"
+            :marks="{ 1: '1次', 3: '3次', 5: '5次' }"
+            show-input
+            :show-input-controls="false"
+          />
+          <template #label>
+            <div class="flex items-center space-x-2">
+              <span>最大迭代次数</span>
+              <ElTooltip content="系统会根据质量评估自动进行迭代优化，提升设计质量" placement="top">
+                <ElIcon class="text-gray-400 cursor-help"><InfoFilled /></ElIcon>
+              </ElTooltip>
+            </div>
+          </template>
+        </ElFormItem>
+
+        <div class="mt-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200">
+          <div class="flex items-start space-x-3">
+            <ElIcon class="text-blue-500 mt-1"><InfoFilled /></ElIcon>
+            <div class="flex-1">
+              <div class="font-semibold text-gray-800 mb-2">智能迭代优化</div>
+              <div class="text-sm text-gray-600 space-y-1">
+                <p>• 主管智能体会对设计方案进行多维度质量评估</p>
+                <p>• 根据评估结果，系统会自动返回相应环节进行优化</p>
+                <p>• 支持预算预警、设计协调性检查等多重质量保障</p>
+                <p class="text-blue-600">• 当前配置：最多迭代 {{ maxIterations }} 次</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 提交按钮 -->
       <div class="flex justify-center space-x-6 mt-12">
         <button
@@ -302,6 +349,7 @@ const formRef = ref<FormInstance>()
 const submitting = ref(false)
 const otherRequirements = ref('')
 const modelConfig = exhibitionStore.modelConfig
+const maxIterations = ref(3) // 新增：最大迭代次数，默认3次
 
 // 计算默认日期
 const today = new Date()
@@ -329,7 +377,8 @@ const form = reactive<ExhibitionRequirement>({
     startDate: formatDateForInput(today),
     endDate: formatDateForInput(nextWeek)
   },
-  specialRequirements: []
+  specialRequirements: [],
+  maxIterations: 3 // 新增：默认值
 })
 
 const rules: FormRules = {
@@ -387,6 +436,9 @@ const submitForm = async () => {
     if (otherRequirements.value.trim()) {
       form.specialRequirements.push(otherRequirements.value.trim())
     }
+
+    // 添加最大迭代次数配置
+    form.maxIterations = maxIterations.value
 
     // 启动多智能体设计流程
     await exhibitionStore.runExhibitionDesign(form)

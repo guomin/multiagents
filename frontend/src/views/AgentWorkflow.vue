@@ -1,5 +1,14 @@
 <template>
   <div class="container mx-auto px-4 py-8">
+    <!-- 人工审核对话框 -->
+    <HumanReviewDialog
+      v-model="showReviewDialog"
+      :quality-evaluation="qualityEvaluation"
+      :iteration-count="iterationCount"
+      :max-iterations="maxIterations"
+      :project-id="currentProjectId"
+      @decision="handleHumanDecision"
+    />
     <!-- 顶部信息 -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
       <div class="flex justify-between items-center mb-4">
@@ -19,14 +28,22 @@
           >
             创建展览
           </ElButton>
-          <ElButton
-            v-else-if="!isProcessing"
-            type="primary"
-            @click="restartWorkflow"
-            :icon="RefreshRight"
-          >
-            重新开始
-          </ElButton>
+          <template v-else-if="!isProcessing">
+            <ElButton
+              type="primary"
+              @click="restartWorkflow"
+              :icon="RefreshRight"
+            >
+              自动模式
+            </ElButton>
+            <ElButton
+              type="success"
+              @click="startHumanWorkflow"
+              :icon="Star"
+            >
+              人工审核模式
+            </ElButton>
+          </template>
           <ElButton
             v-else
             type="danger"
@@ -59,7 +76,7 @@
         <ElIcon class="mr-2 text-blue-600"><Document /></ElIcon>
         当前展览项目
       </h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <div>
           <p class="text-sm text-gray-600">展览名称</p>
           <p class="font-semibold">{{ currentExhibition.title }}</p>
@@ -75,6 +92,69 @@
         <div>
           <p class="text-sm text-gray-600">场地面积</p>
           <p class="font-semibold">{{ currentExhibition.venueSpace.area }}㎡</p>
+        </div>
+      </div>
+
+      <!-- 迭代信息 -->
+      <div v-if="exhibitionState" class="mt-4 pt-4 border-t border-gray-200">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- 迭代次数 -->
+          <div class="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-purple-50 to-pink-50">
+            <div class="p-2 rounded-lg bg-purple-100">
+              <ElIcon class="text-purple-600"><RefreshRight /></ElIcon>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">当前迭代</p>
+              <p class="font-bold text-purple-700">
+                第 {{ (exhibitionState.iterationCount || 0) + 1 }} / {{ exhibitionState.maxIterations || 3 }} 次
+              </p>
+            </div>
+          </div>
+
+          <!-- 质量分数 -->
+          <div v-if="exhibitionState.qualityEvaluation" class="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-green-50 to-teal-50">
+            <div class="p-2 rounded-lg bg-green-100">
+              <ElIcon class="text-green-600"><Star /></ElIcon>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">质量评分</p>
+              <p class="font-bold text-green-700">
+                {{ ((exhibitionState.qualityEvaluation.overallScore || 0) * 100).toFixed(1) }} 分
+              </p>
+            </div>
+          </div>
+
+          <!-- 状态标识 -->
+          <div class="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div class="p-2 rounded-lg bg-blue-100">
+              <ElIcon class="text-blue-600"><InfoFilled /></ElIcon>
+            </div>
+            <div>
+              <p class="text-xs text-gray-600">状态</p>
+              <p class="font-bold text-blue-700">
+                {{ exhibitionState.needsRevision ? '优化中' : '进行中' }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 反馈历史 -->
+        <div v-if="exhibitionState.feedbackHistory && exhibitionState.feedbackHistory.length > 0" class="mt-4">
+          <ElDivider content-position="left">
+            <span class="text-sm text-gray-600">迭代反馈历史</span>
+          </ElDivider>
+          <div class="space-y-2 mt-3">
+            <div
+              v-for="(feedback, idx) in exhibitionState.feedbackHistory"
+              :key="idx"
+              class="flex items-start space-x-2 p-3 rounded-lg bg-gray-50"
+            >
+              <div class="flex-shrink-0 w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
+                <span class="text-xs font-bold text-purple-700">{{ idx + 1 }}</span>
+              </div>
+              <p class="text-sm text-gray-700 flex-1">{{ feedback }}</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -181,6 +261,10 @@ import { ref, computed, onMounted, onUnmounted, toRefs } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useExhibitionStore } from '@/stores/exhibition'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { ElMessage } from 'element-plus'
+import axios from 'axios'
+import HumanReviewDialog from '@/components/HumanReviewDialog.vue'
+import type { QualityEvaluation } from '@/types/exhibition'
 import {
   Cpu,
   RefreshRight,
@@ -194,7 +278,8 @@ import {
   InfoFilled,
   SuccessFilled,
   CircleCloseFilled,
-  Setting
+  Setting,
+  Star
 } from '@element-plus/icons-vue'
 import type { AgentStatus, ExecutionLog } from '@/types/exhibition'
 
@@ -209,12 +294,25 @@ const { agentStatuses, isProcessing, progressPercentage, currentRunningAgent } =
 // 执行日志
 const executionLogs = ref<ExecutionLog[]>([])
 
+// 人工审核相关状态
+const showReviewDialog = ref(false)
+const currentProjectId = ref('')
+const qualityEvaluation = ref<QualityEvaluation | undefined>(undefined)
+const iterationCount = ref(0)
+const maxIterations = ref(3)
+
 // 进度颜色
 const progressColor = computed(() => {
   if (progressPercentage.value === 100) return '#67c23a'
   if (progressPercentage.value > 50) return '#409eff'
   return '#e6a23c'
 })
+
+// 展览状态（用于显示迭代信息）
+const exhibitionState = computed(() => exhibitionStore.currentExhibition)
+
+// 当前展览
+const currentExhibition = computed(() => exhibitionStore.currentExhibition?.requirements)
 
 // 模拟执行过程
 let simulationInterval: NodeJS.Timeout | null = null
@@ -311,6 +409,95 @@ const cancelWorkflow = () => {
 const goToCreateExhibition = () => {
   addLog('info', '🔄 跳转到创建展览页面')
   router.push('/create')
+}
+
+// 人在回路模式相关方法
+const startHumanWorkflow = async () => {
+  executionLogs.value = []
+  addLog('info', '🚀 启动人在回路模式工作流程...')
+
+  try {
+    const exhibitionData = exhibitionStore.currentExhibition
+
+    if (!exhibitionData) {
+      addLog('error', '❌ 没有展览数据，无法启动工作流')
+      addLog('warn', '💡 请先在创建展览页面填写展览需求')
+      return
+    }
+
+    const requirements = exhibitionData.requirements || exhibitionData
+    addLog('info', '📋 当前展览: ' + requirements.title)
+    addLog('info', '🎯 展览主题: ' + requirements.theme)
+
+    const response = await axios.post('/api/exhibition/start-with-human', {
+      requirements,
+      maxIterations: maxIterations.value
+    })
+
+    if (response.data.success) {
+      currentProjectId.value = response.data.projectId
+
+      if (response.data.status === 'waiting_for_human') {
+        addLog('info', '⏸️ 工作流已暂停，等待人工审核')
+        qualityEvaluation.value = response.data.data.qualityEvaluation
+        iterationCount.value = response.data.data.iterationCount || 0
+        showReviewDialog.value = true
+      } else if (response.data.status === 'completed') {
+        addLog('success', '🎉 展陈设计项目完成！')
+      }
+    }
+  } catch (error) {
+    addLog('error', '❌ 启动工作流失败')
+    console.error('工作流启动失败:', error)
+  }
+}
+
+const handleHumanDecision = async (decision: { type: string; feedback: string }) => {
+  if (!currentProjectId.value) {
+    ElMessage.error('项目ID不存在')
+    return
+  }
+
+  addLog('info', `👤 提交人工决策: ${decision.type}`)
+
+  try {
+    const response = await axios.post(`/api/exhibition/human-decision/${currentProjectId.value}`, {
+      decision: decision.type,
+      feedback: decision.feedback,
+      revisionTarget: qualityEvaluation.value?.revisionTarget
+    })
+
+    if (response.data.success) {
+      ElMessage.success('决策已提交')
+
+      if (response.data.status === 'waiting_for_human') {
+        addLog('info', '⏸️ 继续等待人工审核')
+        qualityEvaluation.value = response.data.data.qualityEvaluation
+        iterationCount.value = response.data.data.iterationCount || 0
+        showReviewDialog.value = true
+      } else if (response.data.status === 'completed') {
+        addLog('success', '🎉 展陈设计项目完成！')
+        showReviewDialog.value = false
+      }
+    }
+  } catch (error) {
+    addLog('error', '❌ 提交决策失败')
+    console.error('提交决策失败:', error)
+    ElMessage.error('提交决策失败，请重试')
+  }
+}
+
+// 监听 WebSocket 消息，处理 waitingForHuman 状态
+const handleWebSocketMessage = (data: any) => {
+  if (data.type === 'agentStatus' && exhibitionStore.currentExhibition) {
+    const state = exhibitionStore.currentExhibition
+    if (state.waitingForHuman && state.qualityEvaluation) {
+      qualityEvaluation.value = state.qualityEvaluation
+      iterationCount.value = state.iterationCount || 0
+      showReviewDialog.value = true
+      addLog('info', '⏸️ 收到人工审核请求')
+    }
+  }
 }
 
 const getAgentName = (id: string) => {

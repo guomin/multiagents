@@ -8,6 +8,12 @@ import { BudgetControllerAgent } from "../agents/budget-controller";
 import { SupervisorAgent } from "../agents/supervisor";
 import { broadcastAgentStatus, broadcastProgress } from "../index";
 import { createLogger } from "../utils/logger";
+import {
+  checkBudgetOverrun,
+  determineNextStep,
+  updateIterationState,
+  prepareRevisionState
+} from "./revision-controller";
 
 const logger = createLogger('EXHIBITION-GRAPH');
 
@@ -28,40 +34,46 @@ export class ExhibitionDesignGraph {
     this.supervisor = new SupervisorAgent();
   }
 
-  createGraph(): StateGraph<any> {
+  createGraph(): StateGraph<ExhibitionState> {
     const workflow = new StateGraph(ExhibitionStateSchema);
 
     // 定义节点函数
     const curatorNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      logger.info("🎨 策划智能体开始工作...", { step: "curator" });
+      logger.info("🎨 策划智能体开始工作...", {
+        step: "curator",
+        iteration: state.iterationCount + 1,
+        maxIterations: state.maxIterations
+      });
 
-      // 广播智能体开始状态
       broadcastAgentStatus('curator', {
         status: 'running',
         startTime: new Date()
       });
 
-      broadcastProgress(0, '策划智能体工作中...')
+      const progressBase = (state.iterationCount / (state.maxIterations + 1)) * 100;
+      broadcastProgress(progressBase, `策划智能体工作中... (迭代 ${state.iterationCount + 1}/${state.maxIterations})`);
 
       try {
         const conceptPlan = await this.curator.generateConceptPlan(state.requirements);
 
-        // 广播完成状态
         broadcastAgentStatus('curator', {
           status: 'completed',
           endTime: new Date()
         });
 
-        logger.info("✅ 策划智能体完成工作", { conceptPlan: conceptPlan ? true : false });
+        logger.info("✅ 策划智能体完成工作", {
+          iteration: state.iterationCount + 1,
+          hasRevisionReason: !!state.revisionReason
+        });
 
         return {
           ...state,
           conceptPlan,
           currentStep: "概念策划完成",
-          messages: [...state.messages, "概念策划已完成"]
+          messages: [...state.messages, `概念策划已完成 (迭代 ${state.iterationCount + 1})`],
+          revisionReason: undefined
         };
       } catch (error) {
-        // 广播错误状态
         broadcastAgentStatus('curator', {
           status: 'error',
           endTime: new Date(),
@@ -78,15 +90,18 @@ export class ExhibitionDesignGraph {
         throw new Error("概念策划尚未完成，无法进行空间设计");
       }
 
-      logger.info("🏗️ 空间设计智能体开始工作...", { step: "spatial" });
+      logger.info("🏗️ 空间设计智能体开始工作...", {
+        step: "spatial",
+        iteration: state.iterationCount + 1
+      });
 
-      // 广播智能体开始状态
       broadcastAgentStatus('spatial', {
         status: 'running',
         startTime: new Date()
       });
 
-      broadcastProgress(16, '空间设计智能体工作中...')
+      const progressBase = (state.iterationCount / (state.maxIterations + 1)) * 100;
+      broadcastProgress(progressBase + 16, `空间设计智能体工作中... (迭代 ${state.iterationCount + 1}/${state.maxIterations})`);
 
       try {
         const spatialLayout = await this.spatialDesigner.generateSpatialLayout(
@@ -94,7 +109,6 @@ export class ExhibitionDesignGraph {
           state.conceptPlan
         );
 
-        // 广播完成状态
         broadcastAgentStatus('spatial', {
           status: 'completed',
           endTime: new Date()
@@ -106,10 +120,10 @@ export class ExhibitionDesignGraph {
           ...state,
           spatialLayout,
           currentStep: "空间设计完成",
-          messages: [...state.messages, "空间设计已完成"]
+          messages: [...state.messages, `空间设计已完成 (迭代 ${state.iterationCount + 1})`],
+          revisionReason: undefined
         };
       } catch (error) {
-        // 广播错误状态
         broadcastAgentStatus('spatial', {
           status: 'error',
           endTime: new Date(),
@@ -126,15 +140,14 @@ export class ExhibitionDesignGraph {
         throw new Error("概念策划尚未完成，无法进行视觉设计");
       }
 
-      logger.info("🎭 视觉设计智能体开始工作...", { step: "visual" });
+      logger.info("🎭 视觉设计智能体开始工作...");
 
-      // 广播智能体开始状态
       broadcastAgentStatus('visual', {
         status: 'running',
         startTime: new Date()
       });
 
-      broadcastProgress(33, '视觉设计智能体工作中...')
+      broadcastProgress(33, '视觉设计智能体工作中...');
 
       try {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
@@ -142,7 +155,6 @@ export class ExhibitionDesignGraph {
           state.conceptPlan
         );
 
-        // 广播完成状态
         broadcastAgentStatus('visual', {
           status: 'completed',
           endTime: new Date()
@@ -157,7 +169,6 @@ export class ExhibitionDesignGraph {
           messages: [...state.messages, "视觉设计已完成"]
         };
       } catch (error) {
-        // 广播错误状态
         broadcastAgentStatus('visual', {
           status: 'error',
           endTime: new Date(),
@@ -174,15 +185,14 @@ export class ExhibitionDesignGraph {
         throw new Error("概念策划尚未完成，无法进行互动技术设计");
       }
 
-      logger.info("💻 互动技术智能体开始工作...", { step: "interactive" });
+      logger.info("💻 互动技术智能体开始工作...");
 
-      // 广播智能体开始状态
       broadcastAgentStatus('interactive', {
         status: 'running',
         startTime: new Date()
       });
 
-      broadcastProgress(50, '互动技术智能体工作中...')
+      broadcastProgress(50, '互动技术智能体工作中...');
 
       try {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
@@ -190,7 +200,6 @@ export class ExhibitionDesignGraph {
           state.conceptPlan
         );
 
-        // 广播完成状态
         broadcastAgentStatus('interactive', {
           status: 'completed',
           endTime: new Date()
@@ -205,7 +214,6 @@ export class ExhibitionDesignGraph {
           messages: [...state.messages, "互动技术方案已完成"]
         };
       } catch (error) {
-        // 广播错误状态
         broadcastAgentStatus('interactive', {
           status: 'error',
           endTime: new Date(),
@@ -222,15 +230,14 @@ export class ExhibitionDesignGraph {
         throw new Error("所有设计方案尚未完成，无法进行预算估算");
       }
 
-      logger.info("💰 预算控制智能体开始工作...", { step: "budget" });
+      logger.info("💰 预算控制智能体开始工作...");
 
-      // 广播智能体开始状态
       broadcastAgentStatus('budget', {
         status: 'running',
         startTime: new Date()
       });
 
-      broadcastProgress(67, '预算控制智能体工作中...')
+      broadcastProgress(67, '预算控制智能体工作中...');
 
       try {
         const budgetEstimate = await this.budgetController.generateBudgetEstimate(
@@ -241,7 +248,6 @@ export class ExhibitionDesignGraph {
           state.interactiveSolution!
         );
 
-        // 广播完成状态
         broadcastAgentStatus('budget', {
           status: 'completed',
           endTime: new Date()
@@ -256,7 +262,6 @@ export class ExhibitionDesignGraph {
           messages: [...state.messages, "预算估算已完成"]
         };
       } catch (error) {
-        // 广播错误状态
         broadcastAgentStatus('budget', {
           status: 'error',
           endTime: new Date(),
@@ -269,20 +274,48 @@ export class ExhibitionDesignGraph {
     };
 
     const supervisorNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      logger.info("👔 协调主管分析进度...");
+      logger.info("👔 协调主管进行质量评估...", {
+        iteration: state.iterationCount + 1,
+        maxIterations: state.maxIterations
+      });
+
+      broadcastAgentStatus('supervisor', {
+        status: 'running',
+        startTime: new Date()
+      });
+
+      broadcastProgress(83, `协调主管分析进度... (迭代 ${state.iterationCount + 1}/${state.maxIterations})`);
 
       try {
-        const analysis = await this.supervisor.analyzeProgress(state);
+        const qualityEvaluation = await this.supervisor.evaluateQuality(state);
+        const revisionDecision = this.supervisor.shouldRevise(
+          qualityEvaluation,
+          state.iterationCount,
+          state.maxIterations
+        );
 
-        logger.info("📊 主管分析结果:", {
-          nextAction: analysis.nextAction,
-          recommendations: analysis.recommendations,
-          issues: analysis.issues
+        logger.info("📊 质量评估结果:", {
+          overallScore: qualityEvaluation.overallScore,
+          conceptScore: qualityEvaluation.conceptScore,
+          spatialScore: qualityEvaluation.spatialScore,
+          visualScore: qualityEvaluation.visualScore,
+          interactiveScore: qualityEvaluation.interactiveScore,
+          budgetScore: qualityEvaluation.budgetScore,
+          revisionTarget: qualityEvaluation.revisionTarget,
+          feedback: qualityEvaluation.feedback,
+          needsRevision: revisionDecision.needsRevision,
+          reason: revisionDecision.reason
         });
 
         return {
           ...state,
-          messages: [...state.messages, `主管建议: ${analysis.nextAction}`]
+          qualityEvaluation,
+          needsRevision: revisionDecision.needsRevision,
+          currentStep: "质量评估完成",
+          messages: [
+            ...state.messages,
+            `质量评估: ${(qualityEvaluation.overallScore * 100).toFixed(1)}分 - ${revisionDecision.reason}`
+          ]
         };
       } catch (error) {
         logger.error("❌ 协调主管分析失败", error as Error);
@@ -291,26 +324,26 @@ export class ExhibitionDesignGraph {
     };
 
     const finalizeNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      logger.info("📋 生成最终报告...");
+      logger.info("📋 生成最终报告...", {
+        totalIterations: state.iterationCount + 1,
+        qualityScore: state.qualityEvaluation?.overallScore
+      });
 
-      // 广播协调主管开始工作
       broadcastAgentStatus('supervisor', {
         status: 'running',
         startTime: new Date()
       });
 
-      broadcastProgress(83, '协调主管分析进度...')
+      broadcastProgress(95, '生成最终报告...');
 
       try {
         const finalReport = await this.supervisor.generateFinalReport(state);
 
-        // 广播协调主管完成
         broadcastAgentStatus('supervisor', {
           status: 'completed',
           endTime: new Date()
         });
 
-        // 广播最终完成状态
         broadcastProgress(100, '项目完成');
 
         logger.info("🎉 展陈设计项目完成！", {
@@ -318,7 +351,9 @@ export class ExhibitionDesignGraph {
           hasSpatialLayout: !!state.spatialLayout,
           hasVisualDesign: !!state.visualDesign,
           hasInteractiveSolution: !!state.interactiveSolution,
-          hasBudgetEstimate: !!state.budgetEstimate
+          hasBudgetEstimate: !!state.budgetEstimate,
+          iterationCount: state.iterationCount + 1,
+          qualityScore: state.qualityEvaluation?.overallScore
         });
 
         return {
@@ -327,7 +362,6 @@ export class ExhibitionDesignGraph {
           messages: [...state.messages, "最终报告已生成"]
         };
       } catch (error) {
-        // 广播错误状态
         broadcastAgentStatus('supervisor', {
           status: 'error',
           endTime: new Date(),
@@ -339,6 +373,53 @@ export class ExhibitionDesignGraph {
       }
     };
 
+    // 迭代控制器节点 - 处理状态更新和修订逻辑
+    const iterationControllerNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
+      logger.info("🔄 迭代控制器评估...", {
+        iteration: state.iterationCount + 1,
+        maxIterations: state.maxIterations
+      });
+
+      const nextStep = determineNextStep(state);
+
+      logger.info("➡️  迭代控制器决策", {
+        nextStep: nextStep.target,
+        reason: nextStep.reason
+      });
+
+      // 如果需要修订，更新状态
+      if (nextStep.target !== "finalize" && nextStep.target !== "supervisor") {
+        logger.info("🔧 触发修订流程", {
+          revisionTarget: nextStep.target,
+          reason: nextStep.reason
+        });
+
+        // 更新迭代状态
+        const iterationUpdate = updateIterationState(state, nextStep.reason);
+        const revisionUpdate = prepareRevisionState(state);
+
+        // 设置修订原因（用于智能体）
+        const updatedState = {
+          ...state,
+          ...iterationUpdate,
+          ...revisionUpdate,
+          revisionReason: nextStep.reason,
+          currentStep: `返回${nextStep.target}重新设计`
+        };
+
+        logger.info("📝 状态已更新", {
+          iterationCount: updatedState.iterationCount,
+          revisionTarget: updatedState.lastRevisionStep,
+          hasRevisionReason: !!updatedState.revisionReason
+        });
+
+        return updatedState;
+      }
+
+      // 不需要修订，返回原状态
+      return state;
+    };
+
     // 添加节点到工作流
     workflow.addNode("curator", curatorNode);
     workflow.addNode("spatial_designer", spatialDesignerNode);
@@ -346,60 +427,110 @@ export class ExhibitionDesignGraph {
     workflow.addNode("interactive_tech", interactiveTechNode);
     workflow.addNode("budget_controller", budgetControllerNode);
     workflow.addNode("supervisor", supervisorNode);
+    workflow.addNode("iteration_controller", iterationControllerNode);
     workflow.addNode("finalize", finalizeNode);
 
     // 设置入口点
-    workflow.setEntryPoint("curator");
+    workflow.setEntryPoint("curator" as any);
 
-    // 添加条件边
+    // 添加条件边 - 策展人节点
     workflow.addConditionalEdges(
-      "curator",
+      "curator" as any,
       (state: ExhibitionState) => {
         return state.conceptPlan ? "spatial_designer" : END;
       }
     );
 
+    // 添加条件边 - 空间设计节点
     workflow.addConditionalEdges(
-      "spatial_designer",
+      "spatial_designer" as any,
       (state: ExhibitionState) => {
         return state.spatialLayout ? "visual_designer" : END;
       }
     );
 
+    // 添加条件边 - 视觉设计节点
     workflow.addConditionalEdges(
-      "visual_designer",
+      "visual_designer" as any,
       (state: ExhibitionState) => {
         return state.visualDesign ? "interactive_tech" : END;
       }
     );
 
+    // 添加条件边 - 互动技术节点
     workflow.addConditionalEdges(
-      "interactive_tech",
+      "interactive_tech" as any,
       (state: ExhibitionState) => {
         return state.interactiveSolution ? "budget_controller" : END;
       }
     );
 
+    // 添加条件边 - 预算控制器节点 → supervisor 或 iteration_controller
     workflow.addConditionalEdges(
-      "budget_controller",
+      "budget_controller" as any,
       (state: ExhibitionState) => {
-        return state.budgetEstimate ? "supervisor" : END;
+        // 总是去主管评估
+        return "supervisor";
       }
     );
 
+    // 添加条件边 - 主管评估节点 → iteration_controller
+    workflow.addEdge("supervisor" as any, "iteration_controller" as any);
+
+    // 添加条件边 - 迭代控制器节点（多分支决策）
     workflow.addConditionalEdges(
-      "supervisor",
-      (state: ExhibitionState) => {
-        return state.budgetEstimate ? "finalize" : END;
+      "iteration_controller" as any,
+      (state: ExhibitionState): string => {
+        // 根据状态中的修订目标决定路由
+        const revisionTarget = state.lastRevisionStep;
+
+        logger.info("🔀 迭代控制器路由", {
+          revisionTarget,
+          iterationCount: state.iterationCount,
+          needsRevision: state.needsRevision
+        });
+
+        // 如果有明确的修订目标，返回对应节点
+        if (revisionTarget && state.needsRevision) {
+          // 映射修订目标到节点名称
+          const targetMap: Record<string, string> = {
+            'curator': 'curator',
+            'spatial_designer': 'spatial_designer',
+            'visual_designer': 'visual_designer',
+            'interactive_tech': 'interactive_tech',
+            'budget_controller': 'budget_controller'
+          };
+
+          const targetNode = targetMap[revisionTarget];
+          if (targetNode) {
+            logger.info(`→ 路由到修订节点: ${targetNode}`);
+            return targetNode;
+          }
+        }
+
+        // 否则完成
+        logger.info("→ 路由到完成节点");
+        return "finalize";
+      },
+      {
+        curator: "curator" as any,
+        spatial_designer: "spatial_designer" as any,
+        visual_designer: "visual_designer" as any,
+        interactive_tech: "interactive_tech" as any,
+        budget_controller: "budget_controller" as any,
+        finalize: "finalize" as any
       }
     );
 
-    workflow.addEdge("finalize", END);
+    workflow.addEdge("finalize" as any, END);
 
-    return workflow;
+    return workflow as any;
   }
 
-  async runExhibition(requirements: ExhibitionState["requirements"]): Promise<ExhibitionState> {
+  async runExhibition(
+    requirements: ExhibitionState["requirements"],
+    maxIterations: number = 3
+  ): Promise<ExhibitionState> {
     // 加载环境变量
     if (process.env.NODE_ENV !== "production") {
       require("dotenv").config();
@@ -411,19 +542,35 @@ export class ExhibitionDesignGraph {
     const initialState: ExhibitionState = {
       requirements,
       currentStep: "开始项目",
-      messages: ["展陈设计多智能体系统启动"]
+      messages: ["展陈设计多智能体系统启动（支持迭代优化）"],
+      iterationCount: 0,
+      maxIterations,
+      feedbackHistory: [],
+      needsRevision: false,
+      waitingForHuman: false
     };
 
-    console.log("🚀 启动展陈设计多智能体系统...");
+    logger.info("🚀 启动展陈设计多智能体系统（支持迭代优化）", {
+      title: requirements.title,
+      theme: requirements.theme,
+      budget: requirements.budget.total,
+      currency: requirements.budget.currency,
+      maxIterations
+    });
+
+    console.log("🚀 启动展陈设计多智能体系统（支持迭代优化）...");
     console.log(`📋 项目: ${requirements.title}`);
     console.log(`🎯 主题: ${requirements.theme}`);
     console.log(`💰 预算: ${requirements.budget.total} ${requirements.budget.currency}`);
+    console.log(`🔄 最大迭代次数: ${maxIterations}`);
 
     const result = await chain.invoke(initialState);
 
     // 广播工作流完成状态到前端
     logger.info('🎉 广播工作流完成状态', {
-      hasCompleteResult: !!(result.conceptPlan && result.spatialLayout && result.visualDesign && result.interactiveSolution && result.budgetEstimate)
+      hasCompleteResult: !!(result.conceptPlan && result.spatialLayout && result.visualDesign && result.interactiveSolution && result.budgetEstimate),
+      iterationCount: result.iterationCount + 1,
+      qualityScore: result.qualityEvaluation?.overallScore
     });
 
     // 广播最终结果给所有连接的WebSocket客户端
@@ -450,6 +597,11 @@ export class ExhibitionDesignGraph {
       });
     }
 
-    return result;
+    console.log(`\n🎉 项目完成！总迭代次数: ${(result as any).iterationCount + 1}`);
+    if ((result as any).qualityEvaluation) {
+      console.log(`⭐ 最终质量分数: ${((result as any).qualityEvaluation.overallScore * 100).toFixed(1)}分`);
+    }
+
+    return result as ExhibitionState;
   }
 }

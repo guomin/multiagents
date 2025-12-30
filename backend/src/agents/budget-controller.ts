@@ -31,7 +31,8 @@ export class BudgetControllerAgent {
     conceptPlan: ConceptPlan,
     spatialLayout: SpatialLayout,
     visualDesign: VisualDesign,
-    interactiveSolution: InteractiveSolution
+    interactiveSolution: InteractiveSolution,
+    revisionReason?: string
   ): Promise<BudgetEstimate> {
     const systemPrompt = `你是一位专业的展陈预算控制专家，具有丰富的项目成本估算和财务管理经验。你需要根据展览设计方案，生成详细的预算估算和优化建议。
 
@@ -41,12 +42,12 @@ export class BudgetControllerAgent {
 3. 成本优化的可行性
 4. 风险控制的前瞻性
 
-输出格式：
+${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
 - breakdown: 详细的预算明细
 - totalCost: 总成本估算
 - recommendations: 成本优化建议`;
 
-    const humanPrompt = `请为以下展览项目生成预算估算：
+    const humanPrompt = `请为以下展览项目${revisionReason ? '（根据反馈意见进行修订）' : ''}生成预算估算：
 
 基础信息：
 - 总预算：${requirements.budget.total} ${requirements.budget.currency}
@@ -59,7 +60,7 @@ export class BudgetControllerAgent {
 3. 视觉设计方案
 4. 互动技术方案
 
-请生成详细的预算估算和优化建议。`;
+${revisionReason ? `\n【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对预算估算进行针对性改进。\n` : ''}请生成详细的预算估算和优化建议。`;
 
     const messages = [
       new SystemMessage(systemPrompt),

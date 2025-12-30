@@ -38,7 +38,7 @@ export class CuratorAgent {
   }
 
   // 暂时移除装饰器，改为手动日志
-  async generateConceptPlan(requirements: ExhibitionRequirement): Promise<ConceptPlan> {
+  async generateConceptPlan(requirements: ExhibitionRequirement, revisionReason?: string): Promise<ConceptPlan> {
     console.log('🎨 [策划智能体] 开始生成概念策划方案...')
     const endTimer = this.logger.time('概念策划生成');
 
@@ -47,7 +47,8 @@ export class CuratorAgent {
       theme: requirements.theme,
       targetAudience: requirements.targetAudience,
       venueArea: requirements.venueSpace.area,
-      specialRequirements: requirements.specialRequirements
+      specialRequirements: requirements.specialRequirements,
+      hasRevisionReason: !!revisionReason
     });
 
     try {
@@ -59,13 +60,13 @@ export class CuratorAgent {
 3. 重点展品的代表性
 4. 观众体验的沉浸感
 
-输出格式：
+${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
 - concept: 150字以内的核心概念描述
 - narrative: 完整的叙事结构说明
 - keyExhibits: 5-8个重点展品建议
 - visitorFlow: 观众参观动线设计理念`;
 
-      const humanPrompt = `请为以下展览需求生成概念策划方案：
+      const humanPrompt = `请为以下展览需求${revisionReason ? '（根据反馈意见进行修订）' : ''}生成概念策划方案：
 
 展览标题：${requirements.title}
 展览主题：${requirements.theme}
@@ -73,7 +74,7 @@ export class CuratorAgent {
 场地信息：${requirements.venueSpace.area}平方米，层高${requirements.venueSpace.height}米
 特殊要求：${requirements.specialRequirements?.join(", ") || "无"}
 
-请生成详细的展览概念策划。`;
+${revisionReason ? `\n【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对概念策划进行针对性改进。\n` : ''}请生成详细的展览概念策划。`;
 
       this.logger.debug('构建提示词', {
         systemPromptLength: systemPrompt.length,
@@ -158,13 +159,6 @@ export class CuratorAgent {
       this.logger.error('概念策划生成失败', error as Error, {
         exhibitionTitle: requirements.title,
         theme: requirements.theme
-      });
-
-      agentLogger.logError('curator', 'generateConceptPlan', error as Error, {
-        requirements: {
-          title: requirements.title,
-          theme: requirements.theme
-        }
       });
 
       throw error;

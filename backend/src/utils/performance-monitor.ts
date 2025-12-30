@@ -225,11 +225,12 @@ export class PerformanceMonitor {
     const current = this.metrics[this.metrics.length - 1]
 
     // 计算平均值
-    const avg = {
+    const avg: any = {
       cpuUsage: {
         total: this.metrics.reduce((sum, m) => sum + m.cpuUsage.total, 0) / this.metrics.length,
         user: this.metrics.reduce((sum, m) => sum + m.cpuUsage.user, 0) / this.metrics.length,
-        system: this.metrics.reduce((sum, m) => sum + m.cpuUsage.system, 0) / this.metrics.length
+        system: this.metrics.reduce((sum, m) => sum + m.cpuUsage.system, 0) / this.metrics.length,
+        idle: this.metrics.reduce((sum, m) => sum + m.cpuUsage.idle, 0) / this.metrics.length
       },
       memoryUsage: {
         percentage: this.metrics.reduce((sum, m) => sum + m.memoryUsage.percentage, 0) / this.metrics.length
@@ -240,11 +241,12 @@ export class PerformanceMonitor {
     }
 
     // 计算峰值
-    const peak = {
+    const peak: any = {
       cpuUsage: {
         total: Math.max(...this.metrics.map(m => m.cpuUsage.total)),
         user: Math.max(...this.metrics.map(m => m.cpuUsage.user)),
-        system: Math.max(...this.metrics.map(m => m.cpuUsage.system))
+        system: Math.max(...this.metrics.map(m => m.cpuUsage.system)),
+        idle: Math.max(...this.metrics.map(m => m.cpuUsage.idle))
       },
       memoryUsage: {
         percentage: Math.max(...this.metrics.map(m => m.memoryUsage.percentage))

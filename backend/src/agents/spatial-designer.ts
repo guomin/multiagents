@@ -21,7 +21,8 @@ export class SpatialDesignerAgent {
 
   async generateSpatialLayout(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan
+    conceptPlan: ConceptPlan,
+    revisionReason?: string
   ): Promise<SpatialLayout> {
     const systemPrompt = `你是一位专业的展陈空间设计师，具有丰富的空间规划和动线设计经验。你需要根据展览需求和概念策划，生成空间布局方案。
 
@@ -31,13 +32,13 @@ export class SpatialDesignerAgent {
 3. 功能区域的合理性
 4. 无障碍设计的完备性
 
-输出格式：
+${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
 - layout: 空间布局的详细描述
 - visitorRoute: 具体的参观路线说明
 - zones: 功能区域划分（名称、面积、功能）
 - accessibility: 无障碍设计说明`;
 
-    const humanPrompt = `请为以下展览生成空间布局方案：
+    const humanPrompt = `请为以下展览${revisionReason ? '（根据反馈意见进行修订）' : ''}生成空间布局方案：
 
 场地信息：
 - 面积：${requirements.venueSpace.area}平方米
@@ -49,7 +50,7 @@ export class SpatialDesignerAgent {
 - 叙事结构：${conceptPlan.narrative}
 - 重点展品：${conceptPlan.keyExhibits.join(", ")}
 
-请生成符合展览主题的空间设计方案。`;
+${revisionReason ? `\n【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对空间布局进行针对性改进。\n` : ''}请生成符合展览主题的空间设计方案。`;
 
     const messages = [
       new SystemMessage(systemPrompt),
