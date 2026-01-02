@@ -122,7 +122,12 @@ export function broadcastAgentStatus(agentId: string, status: any) {
     timestamp: new Date().toISOString()
   })
 
-  mainLogger.debug('广播智能体状态', { agentId, status, clientCount: wss.clients.size })
+  mainLogger.info('📡 广播智能体状态', {
+    agentId,
+    status: status.status,
+    clientCount: wss.clients.size,
+    connectedClients: Array.from(wss.clients).map(c => c.readyState)
+  })
 
   let successCount = 0
   wss.clients.forEach((client) => {
@@ -136,7 +141,7 @@ export function broadcastAgentStatus(agentId: string, status: any) {
     }
   })
 
-  mainLogger.debug('智能体状态广播完成', { agentId, successCount, totalClients: wss.clients.size })
+  mainLogger.info('✅ 智能体状态广播完成', { agentId, successCount, totalClients: wss.clients.size })
 }
 
 // 广播工作流进度
@@ -180,6 +185,82 @@ export function broadcastConnectionStatus(status: string, data: any) {
         client.send(message)
       } catch (error) {
         mainLogger.warn('发送连接状态失败', error as Error)
+      }
+    }
+  })
+}
+
+// 广播日志消息
+export function broadcastLog(level: 'info' | 'success' | 'warning' | 'error', message: string) {
+  const logMessage = JSON.stringify({
+    type: 'log',
+    level,
+    message,
+    timestamp: new Date().toISOString()
+  })
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      try {
+        client.send(logMessage)
+      } catch (error) {
+        mainLogger.warn('发送日志消息失败', error as Error)
+      }
+    }
+  })
+}
+
+// 广播人工审核等待
+export function broadcastWaitingForHuman(
+  qualityEvaluation: any,
+  iterationCount: number,
+  revisionTarget?: string
+) {
+  const message = JSON.stringify({
+    type: 'waitingForHuman',
+    qualityEvaluation,
+    iterationCount,
+    revisionTarget,
+    timestamp: new Date().toISOString()
+  })
+
+  mainLogger.info('⏸️  广播人工审核请求', {
+    iterationCount,
+    revisionTarget,
+    overallScore: qualityEvaluation?.overallScore
+  })
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      try {
+        client.send(message)
+      } catch (error) {
+        mainLogger.warn('发送人工审核请求失败', error as Error)
+      }
+    }
+  })
+}
+
+// 广播迭代更新
+export function broadcastIterationUpdate(iterationCount: number, revisionTarget: string) {
+  const message = JSON.stringify({
+    type: 'iterationUpdate',
+    iterationCount,
+    revisionTarget,
+    timestamp: new Date().toISOString()
+  })
+
+  mainLogger.info('🔄 广播迭代更新', {
+    iterationCount,
+    revisionTarget
+  })
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      try {
+        client.send(message)
+      } catch (error) {
+        mainLogger.warn('发送迭代更新失败', error as Error)
       }
     }
   })

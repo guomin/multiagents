@@ -3,6 +3,13 @@ import path from 'path'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 
+
+// // 确保日志目录存在
+// const logDir = 'logs';
+// if (!fs.existsSync(logDir)) {
+//   fs.mkdirSync(logDir);
+// }
+
 // 日志级别枚举
 export enum LogLevel {
   DEBUG = 'DEBUG',
@@ -41,7 +48,9 @@ export interface LoggerConfig {
 const defaultConfig: LoggerConfig = {
   level: process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
   enableConsole: true,
-  enableFile: process.env.NODE_ENV === 'production',
+  // 生产环境或开发环境下启用文件日志
+  // enableFile: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
+  enableFile: true,
   logDir: path.join(process.cwd(), 'logs'),
   maxFileSize: 50, // 50MB
   maxFiles: 10,
@@ -58,7 +67,14 @@ class Logger {
   }
 
   private initializeLogFiles() {
-    if (!this.config.enableFile) return
+    console.log('Initializing log files...')
+
+    if (!this.config.enableFile) {
+      console.log('File logging is disabled.')
+      console.log(process.env.NODE_ENV)
+      return
+    }
+    console.log(`Log directory: ${this.config.logDir}`)
 
     // 确保日志目录存在
     if (!fs.existsSync(this.config.logDir)) {

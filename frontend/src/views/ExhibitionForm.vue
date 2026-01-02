@@ -250,6 +250,22 @@
           </template>
         </ElFormItem>
 
+        <ElFormItem label="自动批准模式">
+          <div class="flex items-center space-x-4">
+            <ElSwitch
+              v-model="autoApprove"
+              active-text="开启"
+              inactive-text="关闭"
+              :active-value="true"
+              :inactive-value="false"
+              style="--el-switch-on-color: #13ce66; --el-switch-off-color: #dcdfe6"
+            />
+            <ElTooltip content="开启后，系统将自动通过质量审核并完成设计；关闭后，将在审核点等待人工决策" placement="top">
+              <ElIcon class="text-gray-400 cursor-help"><InfoFilled /></ElIcon>
+            </ElTooltip>
+          </div>
+        </ElFormItem>
+
         <div class="mt-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200">
           <div class="flex items-start space-x-3">
             <ElIcon class="text-blue-500 mt-1"><InfoFilled /></ElIcon>
@@ -350,6 +366,7 @@ const submitting = ref(false)
 const otherRequirements = ref('')
 const modelConfig = exhibitionStore.modelConfig
 const maxIterations = ref(3) // 新增：最大迭代次数，默认3次
+const autoApprove = ref(false) // 新增：自动批准模式，默认关闭（人工审核）
 
 // 计算默认日期
 const today = new Date()
@@ -439,6 +456,14 @@ const submitForm = async () => {
 
     // 添加最大迭代次数配置
     form.maxIterations = maxIterations.value
+
+    // 添加自动批准模式配置
+    ;(form as any).autoApprove = autoApprove.value
+
+    console.log('📋 [FORM] 提交配置:', {
+      maxIterations: maxIterations.value,
+      autoApprove: autoApprove.value
+    })
 
     // 启动多智能体设计流程
     await exhibitionStore.runExhibitionDesign(form)

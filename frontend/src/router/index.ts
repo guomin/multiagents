@@ -1,7 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import SimpleDashboard from '@/views/SimpleDashboard.vue'
-import ExhibitionForm from '@/views/ExhibitionForm.vue'
-import AgentWorkflow from '@/views/AgentWorkflow.vue'
 import Results from '@/views/Results.vue'
 import ProjectList from '@/views/ProjectList.vue'
 
@@ -10,31 +8,31 @@ const routes = [
     path: '/',
     name: 'Dashboard',
     component: SimpleDashboard,
-    meta: { title: '控制台' }
+    meta: { title: '控制台', transition: 'slide-in-up' }
   },
   {
     path: '/projects',
     name: 'ProjectList',
     component: ProjectList,
-    meta: { title: '项目列表' }
+    meta: { title: '项目列表', transition: 'slide-in-right' }
   },
   {
     path: '/create',
     name: 'ExhibitionForm',
-    component: ExhibitionForm,
-    meta: { title: '创建展览' }
+    component: () => import('@/views/ExhibitionFormOptimized.vue'),
+    meta: { title: '创建展览', transition: 'zoom-in' }
   },
   {
     path: '/workflow/:id?',
     name: 'AgentWorkflow',
-    component: AgentWorkflow,
-    meta: { title: '智能体工作流' }
+    component: () => import('@/views/WorkflowPageOptimized.vue'),
+    meta: { title: '智能体工作流', transition: 'fade' }
   },
   {
     path: '/results/:id',
     name: 'Results',
     component: Results,
-    meta: { title: '设计结果' }
+    meta: { title: '设计结果', transition: 'slide-in-left' }
   }
 ]
 

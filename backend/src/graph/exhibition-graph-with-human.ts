@@ -6,7 +6,7 @@ import { VisualDesignerAgent } from "../agents/visual-designer";
 import { InteractiveTechAgent } from "../agents/interactive-tech";
 import { BudgetControllerAgent } from "../agents/budget-controller";
 import { SupervisorAgent } from "../agents/supervisor";
-import { broadcastAgentStatus, broadcastProgress } from "../index";
+import { broadcastAgentStatus, broadcastProgress, broadcastLog, broadcastWaitingForHuman, broadcastIterationUpdate } from "../index";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger('EXHIBITION-GRAPH-HUMAN');
@@ -40,6 +40,7 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('curator', { status: 'running', startTime: new Date() });
       broadcastProgress(10, '策划智能体工作中...');
+      broadcastLog('info', '🎨 策划智能体开始工作...');
 
       try {
         const conceptPlan = await this.curator.generateConceptPlan(
@@ -48,6 +49,7 @@ export class ExhibitionDesignGraphWithHuman {
         );
 
         broadcastAgentStatus('curator', { status: 'completed', endTime: new Date() });
+        broadcastLog('success', '✅ 策划智能体完成工作');
         logger.info("✅ 策划智能体完成工作");
 
         return {
@@ -58,6 +60,7 @@ export class ExhibitionDesignGraphWithHuman {
           revisionReason: undefined
         };
       } catch (error) {
+        broadcastLog('error', `❌ 策划智能体执行失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 策划智能体执行失败", error as Error);
         throw error;
       }
@@ -73,6 +76,7 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('spatial', { status: 'running', startTime: new Date() });
       broadcastProgress(25, '空间设计智能体工作中...');
+      broadcastLog('info', '🏗️ 空间设计智能体开始工作...');
 
       try {
         const spatialLayout = await this.spatialDesigner.generateSpatialLayout(
@@ -82,6 +86,7 @@ export class ExhibitionDesignGraphWithHuman {
         );
 
         broadcastAgentStatus('spatial', { status: 'completed', endTime: new Date() });
+        broadcastLog('success', '✅ 空间设计智能体完成工作');
         logger.info("✅ 空间设计智能体完成工作");
 
         return {
@@ -92,6 +97,7 @@ export class ExhibitionDesignGraphWithHuman {
           revisionReason: undefined
         };
       } catch (error) {
+        broadcastLog('error', `❌ 空间设计智能体执行失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 空间设计智能体执行失败", error as Error);
         throw error;
       }
@@ -107,6 +113,7 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('visual', { status: 'running', startTime: new Date() });
       broadcastProgress(40, '视觉设计智能体工作中...');
+      broadcastLog('info', '🎭 视觉设计智能体开始工作...');
 
       try {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
@@ -116,6 +123,7 @@ export class ExhibitionDesignGraphWithHuman {
         );
 
         broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
+        broadcastLog('success', '✅ 视觉设计智能体完成工作');
         logger.info("✅ 视觉设计智能体完成工作");
 
         return {
@@ -126,6 +134,7 @@ export class ExhibitionDesignGraphWithHuman {
           revisionReason: undefined
         };
       } catch (error) {
+        broadcastLog('error', `❌ 视觉设计智能体执行失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 视觉设计智能体执行失败", error as Error);
         throw error;
       }
@@ -141,6 +150,7 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('interactive', { status: 'running', startTime: new Date() });
       broadcastProgress(55, '互动技术智能体工作中...');
+      broadcastLog('info', '💻 互动技术智能体开始工作...');
 
       try {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
@@ -150,6 +160,7 @@ export class ExhibitionDesignGraphWithHuman {
         );
 
         broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });
+        broadcastLog('success', '✅ 互动技术智能体完成工作');
         logger.info("✅ 互动技术智能体完成工作");
 
         return {
@@ -160,6 +171,7 @@ export class ExhibitionDesignGraphWithHuman {
           revisionReason: undefined
         };
       } catch (error) {
+        broadcastLog('error', `❌ 互动技术智能体执行失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 互动技术智能体执行失败", error as Error);
         throw error;
       }
@@ -174,6 +186,7 @@ export class ExhibitionDesignGraphWithHuman {
       logger.info("🔄 启动并行设计流程（视觉设计 + 互动技术）...");
 
       broadcastProgress(40, '并行设计中：视觉 + 互动技术...');
+      broadcastLog('info', '🔄 启动并行设计流程（视觉设计 + 互动技术）...');
 
       try {
         // 确保 conceptPlan 存在（类型检查）
@@ -185,29 +198,34 @@ export class ExhibitionDesignGraphWithHuman {
           (async () => {
             logger.info("🎭 视觉设计智能体工作中...");
             broadcastAgentStatus('visual', { status: 'running', startTime: new Date() });
+            broadcastLog('info', '🎭 视觉设计智能体工作中...');
             const result = await this.visualDesigner.generateVisualDesign(
               state.requirements,
               conceptPlan,
               feedback
             );
             broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
+            broadcastLog('success', '✅ 视觉设计智能体完成');
             logger.info("✅ 视觉设计智能体完成");
             return result;
           })(),
           (async () => {
             logger.info("💻 互动技术智能体工作中...");
             broadcastAgentStatus('interactive', { status: 'running', startTime: new Date() });
+            broadcastLog('info', '💻 互动技术智能体工作中...');
             const result = await this.interactiveTech.generateInteractiveSolution(
               state.requirements,
               conceptPlan,
               feedback
             );
             broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });
+            broadcastLog('success', '✅ 互动技术智能体完成');
             logger.info("✅ 互动技术智能体完成");
             return result;
           })()
         ]);
 
+        broadcastLog('success', '🎉 并行设计流程完成！');
         logger.info("🎉 并行设计流程完成！");
 
         return {
@@ -223,6 +241,7 @@ export class ExhibitionDesignGraphWithHuman {
           revisionReason: undefined
         };
       } catch (error) {
+        broadcastLog('error', `❌ 并行设计流程失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 并行设计流程失败", error as Error);
 
         // 标记失败的节点
@@ -251,6 +270,7 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('budget', { status: 'running', startTime: new Date() });
       broadcastProgress(70, '预算控制智能体工作中...');
+      broadcastLog('info', '💰 预算控制智能体开始工作...');
 
       try {
         const budgetEstimate = await this.budgetController.generateBudgetEstimate(
@@ -263,6 +283,7 @@ export class ExhibitionDesignGraphWithHuman {
         );
 
         broadcastAgentStatus('budget', { status: 'completed', endTime: new Date() });
+        broadcastLog('success', '✅ 预算控制智能体完成工作');
         logger.info("✅ 预算控制智能体完成工作");
 
         return {
@@ -272,6 +293,7 @@ export class ExhibitionDesignGraphWithHuman {
           messages: [...state.messages, "预算估算已完成"]
         };
       } catch (error) {
+        broadcastLog('error', `❌ 预算控制智能体执行失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 预算控制智能体执行失败", error as Error);
         throw error;
       }
@@ -283,32 +305,66 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('supervisor', { status: 'running', startTime: new Date() });
       broadcastProgress(85, '主管分析进度...');
+      broadcastLog('info', '👔 主管进行质量评估和人工审核...');
 
       try {
         const qualityEvaluation = await this.supervisor.evaluateQuality(state);
 
+        broadcastLog('info', `📊 质量评估完成: ${(qualityEvaluation.overallScore * 100).toFixed(1)}分 - ${qualityEvaluation.feedback}`);
         logger.info("📊 质量评估完成:", {
           overallScore: qualityEvaluation.overallScore,
-          feedback: qualityEvaluation.feedback
+          feedback: qualityEvaluation.feedback,
+          autoApprove: state.autoApprove  // 记录自动批准模式
         });
 
-        const result = {
-          ...state,
-          qualityEvaluation,
-          currentStep: "等待人工审核",
-          waitingForHuman: true, // 关键：标记等待人工审核
-          messages: [
-            ...state.messages,
-            `质量评估: ${(qualityEvaluation.overallScore * 100).toFixed(1)}分 - ${qualityEvaluation.feedback}`
-          ]
-        };
+        // 🔑 关键修改：只有在非自动批准模式下才触发人工审核
+        if (state.autoApprove) {
+          // 自动批准模式：不发送 waitingForHuman 事件，不中断流程
+          logger.info("🤖 自动批准模式：跳过人工审核，直接通过");
+          broadcastLog('info', '✅ 自动批准模式：质量评估通过，继续执行');
 
-        // 这里触发中断，等待人工输入
-        // 注意：需要在图编译后通过 updateState 来恢复
-        logger.warn("⏸️  触发中断，等待人工审核决策...");
+          const result = {
+            ...state,
+            qualityEvaluation,
+            currentStep: "自动批准通过",
+            waitingForHuman: false,  // 不等待人工
+            messages: [
+              ...state.messages,
+              `质量评估: ${(qualityEvaluation.overallScore * 100).toFixed(1)}分 (自动批准)`
+            ]
+          };
 
-        return result;
+          broadcastAgentStatus('supervisor', { status: 'completed', endTime: new Date() });
+          return result;
+        } else {
+          // 人工审核模式：触发中断，等待人工决策
+          const result = {
+            ...state,
+            qualityEvaluation,
+            currentStep: "等待人工审核",
+            waitingForHuman: true, // 关键：标记等待人工审核
+            messages: [
+              ...state.messages,
+              `质量评估: ${(qualityEvaluation.overallScore * 100).toFixed(1)}分 - ${qualityEvaluation.feedback}`
+            ]
+          };
+
+          // 广播人工审核请求
+          broadcastWaitingForHuman(
+            qualityEvaluation,
+            state.iterationCount,
+            qualityEvaluation.revisionTarget
+          );
+
+          // 这里触发中断，等待人工输入
+          // 注意：需要在图编译后通过 updateState 来恢复
+          logger.warn("⏸️  触发中断，等待人工审核决策...");
+
+          broadcastAgentStatus('supervisor', { status: 'completed', endTime: new Date() });
+          return result;
+        }
       } catch (error) {
+        broadcastLog('error', `❌ 主管评估失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 主管评估失败", error as Error);
         throw error;
       }
@@ -318,19 +374,28 @@ export class ExhibitionDesignGraphWithHuman {
     const humanDecisionNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
       logger.info("👤 处理人工决策...", {
         humanDecision: state.humanDecision,
-        iterationCount: state.iterationCount
+        iterationCount: state.iterationCount,
+        hasQualityEvaluation: !!state.qualityEvaluation,
+        needsRevision: state.needsRevision,
+        lastRevisionStep: state.lastRevisionStep
       });
+
+      broadcastLog('info', `👤 收到人工决策: ${state.humanDecision}`);
 
       const decision = state.humanDecision;
 
       if (!decision) {
+        logger.error("❌ 缺少人工决策");
+        broadcastLog('error', '❌ 缺少人工决策');
         throw new Error("缺少人工决策");
       }
 
+      logger.info("✅ 人工决策验证通过，开始处理...");
       broadcastProgress(90, '处理人工决策...');
 
       if (decision === "approve") {
         // 人工审核通过，继续完成
+        broadcastLog('success', '✅ 人工审核通过，准备生成最终报告');
         return {
           ...state,
           needsRevision: false,
@@ -340,18 +405,22 @@ export class ExhibitionDesignGraphWithHuman {
       } else if (decision === "revise") {
         // 人工要求修改
         const revisionTarget = state.qualityEvaluation?.revisionTarget || "curator";
+        const newIterationCount = state.iterationCount + 1;
 
         logger.info("🔧 人工要求修改", {
           revisionTarget,
           feedback: state.humanFeedback || "需要进一步优化"
         });
 
+        broadcastLog('warning', `🔧 启动第 ${newIterationCount} 次迭代，修订目标: ${revisionTarget}`);
+        broadcastIterationUpdate(newIterationCount, revisionTarget);
+
         // 准备修订
         const revisionUpdate = {
           lastRevisionStep: revisionTarget,
           needsRevision: true,
           revisionReason: state.humanFeedback || state.qualityEvaluation?.feedback || "需要进一步优化",
-          iterationCount: state.iterationCount + 1,
+          iterationCount: newIterationCount,
           feedbackHistory: [
             ...(state.feedbackHistory || []),
             `第${state.iterationCount + 1}次迭代: ${state.humanFeedback || state.qualityEvaluation?.feedback}`
@@ -422,12 +491,14 @@ export class ExhibitionDesignGraphWithHuman {
 
       broadcastAgentStatus('supervisor', { status: 'running', startTime: new Date() });
       broadcastProgress(95, '生成最终报告...');
+      broadcastLog('info', '📋 生成最终报告...');
 
       try {
         const finalReport = await this.supervisor.generateFinalReport(state);
 
         broadcastAgentStatus('supervisor', { status: 'completed', endTime: new Date() });
         broadcastProgress(100, '项目完成');
+        broadcastLog('success', '🎉 展陈设计项目完成！');
 
         logger.info("🎉 展陈设计项目完成！");
 
@@ -437,6 +508,7 @@ export class ExhibitionDesignGraphWithHuman {
           messages: [...state.messages, "最终报告已生成"]
         };
       } catch (error) {
+        broadcastLog('error', `❌ 生成最终报告失败: ${error instanceof Error ? error.message : '未知错误'}`);
         logger.error("❌ 协调主管执行失败", error as Error);
         throw error;
       }
@@ -495,16 +567,21 @@ export class ExhibitionDesignGraphWithHuman {
     workflow.addConditionalEdges(
       "supervisor_review" as any,
       (state: ExhibitionState) => {
-        // 如果已经有人工决策，进入人工决策处理节点
-        // 否则，结束流程并返回状态（等待人工输入）
+        // 🔑 修改后的逻辑：
+        // 1. 如果已经有人工决策（批准/修订/拒绝），进入人工决策处理节点
         if (state.humanDecision && state.waitingForHuman === false) {
           return "human_decision";
         }
-        // 第一次运行到审核点时，直接结束
+        // 2. 如果是自动批准模式（waitingForHuman=false 且无人工决策），直接完成
+        if (state.waitingForHuman === false && !state.humanDecision) {
+          return "finalize";
+        }
+        // 3. 人工审核模式：结束流程并返回状态（等待人工输入）
         return END;
       },
       {
         human_decision: "human_decision" as any,
+        finalize: "finalize" as any,
         [END]: END
       }
     );
@@ -514,6 +591,12 @@ export class ExhibitionDesignGraphWithHuman {
       "human_decision" as any,
       (state: ExhibitionState) => {
         const revisionTarget = state.lastRevisionStep;
+
+        logger.info("🔍 人工决策后路由判断", {
+          needsRevision: state.needsRevision,
+          revisionTarget,
+          decision: state.humanDecision
+        });
 
         // 如果需要修订，返回对应节点
         if (state.needsRevision && revisionTarget) {
@@ -526,10 +609,20 @@ export class ExhibitionDesignGraphWithHuman {
             'budget_controller': 'budget_controller'
           };
 
-          return targetMap[revisionTarget];
+          const targetNode = targetMap[revisionTarget];
+
+          // 🔑 关键：如果找不到目标节点，默认到 curator
+          if (!targetNode) {
+            logger.warn(`⚠️  未知的修订目标: ${revisionTarget}，默认使用 curator`);
+            return "curator";
+          }
+
+          logger.info(`🔧 路由到修订节点: ${targetNode}`);
+          return targetNode;
         }
 
         // 否则完成
+        logger.info("✅ 路由到完成节点");
         return "finalize";
       },
       {
@@ -549,7 +642,8 @@ export class ExhibitionDesignGraphWithHuman {
   }
 
   async runExhibition(
-    requirements: ExhibitionState["requirements"]
+    requirements: ExhibitionState["requirements"],
+    autoApprove: boolean = true
   ): Promise<{ graph: any; initialState: ExhibitionState }> {
     const graph = this.createGraph();
 
@@ -561,7 +655,8 @@ export class ExhibitionDesignGraphWithHuman {
       maxIterations: 5,
       feedbackHistory: [],
       needsRevision: false,
-      waitingForHuman: false
+      waitingForHuman: false,
+      autoApprove  // 传递自动批准标志到状态中
     };
 
     return { graph, initialState };

@@ -27,7 +27,7 @@ export interface QualityEvaluation {
   interactiveScore: number; // 互动技术分数
   budgetScore: number; // 预算合理性分数
   feedback: string; // 反馈意见
-  revisionTarget: 'none' | 'curator' | 'spatial_designer' | 'visual_designer' | 'interactive_tech' | 'budget_controller';
+  revisionTarget: 'none' | 'curator' | 'spatial_designer' | 'parallel_designs' | 'visual_designer' | 'interactive_tech' | 'budget_controller';
 }
 
 export interface AgentStatus {
@@ -39,6 +39,16 @@ export interface AgentStatus {
   endTime?: Date;
   result?: any;
   error?: string;
+}
+
+// 并行组类型
+export interface AgentGroup {
+  id: string;
+  name: string;
+  type: 'single' | 'parallel'; // 单独执行 或 并行执行
+  status: 'pending' | 'running' | 'completed' | 'error';
+  members?: AgentGroup[]; // 并行组的成员
+  isReviewPoint?: boolean; // 是否为审核点
 }
 
 export interface ExhibitionState {

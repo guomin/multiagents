@@ -1,7 +1,7 @@
 <template>
   <div class="container mx-auto px-4 py-8">
-    <!-- 人工审核对话框 -->
-    <HumanReviewDialog
+    <!-- 人工审核对话框（使用简化版） -->
+    <HumanReviewDialogSimple
       v-model="showReviewDialog"
       :quality-evaluation="qualityEvaluation"
       :iteration-count="iterationCount"
@@ -9,6 +9,28 @@
       :project-id="currentProjectId"
       @decision="handleHumanDecision"
     />
+
+    <!-- 迭代状态栏（新增） -->
+    <div v-if="iterationCount > 0" class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg shadow-md p-4 mb-6 border border-purple-200">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <div class="p-2 rounded-lg bg-purple-100">
+            <ElIcon class="text-purple-600 text-xl"><RefreshRight /></ElIcon>
+          </div>
+          <div>
+            <h3 class="font-bold text-purple-900">🔄 迭代 #{{ iterationCount }}</h3>
+            <p v-if="revisionTarget" class="text-sm text-purple-700">
+              正在修订：{{ getRevisionTargetLabel(revisionTarget) }}
+            </p>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-sm text-purple-600">迭代进度</div>
+          <div class="font-bold text-purple-900">{{ iterationCount }} / {{ maxIterations }}</div>
+        </div>
+      </div>
+    </div>
+
     <!-- 顶部信息 -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-8">
       <div class="flex justify-between items-center mb-4">
@@ -166,57 +188,104 @@
         工作流程可视化
       </h2>
       <div class="relative">
-        <!-- 时间线 -->
+        <!-- 时间线（支持并行节点） -->
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0 lg:space-x-2">
           <div
-            v-for="(agent, index) in agentStatuses"
-            :key="agent.id"
+            v-for="(group, index) in agentGroups"
+            :key="group.id"
             class="relative flex lg:flex-col items-center"
+            :class="{ 'w-full lg:w-auto': group.type === 'parallel' }"
           >
             <!-- 连接线 -->
             <div
-              v-if="index < agentStatuses.length - 1"
+              v-if="index < agentGroups.length - 1"
               class="hidden lg:block absolute top-8 left-full w-full h-0.5 bg-gray-300 z-0"
             ></div>
 
-            <!-- 智能体节点 -->
+            <!-- 单独节点 -->
             <div
+              v-if="group.type === 'single'"
               class="relative z-10 bg-white border-2 rounded-lg p-4 min-w-[160px] transition-all duration-300 hover:shadow-lg"
-              :class="getWorkflowNodeClass(agent.status, agent.type)"
+              :class="getWorkflowNodeClass(group.status, group.id)"
             >
               <div class="flex flex-col items-center text-center">
+                <!-- 审核点标记 -->
+                <div v-if="group.isReviewPoint" class="absolute -top-2 -right-2 bg-yellow-400 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+                  👁
+                </div>
+
                 <!-- 状态图标 -->
                 <div
                   class="w-12 h-12 rounded-full flex items-center justify-center mb-2"
-                  :class="getWorkflowIconClass(agent.status, agent.type)"
+                  :class="getWorkflowIconClass(group.status)"
                 >
                   <ElIcon class="text-xl">
-                    <component :is="getWorkflowIcon(agent.status)" />
+                    <component :is="getWorkflowIcon(group.status)" />
                   </ElIcon>
                 </div>
 
                 <!-- 智能体名称 -->
-                <h3 class="font-semibold text-gray-800 text-sm">{{ agent.name }}</h3>
+                <h3 class="font-semibold text-gray-800 text-sm">{{ group.name }}</h3>
 
                 <!-- 状态标签 -->
                 <ElTag
-                  :type="getWorkflowTagType(agent.status)"
+                  :type="getWorkflowTagType(group.status)"
                   size="small"
                   class="mt-2"
                 >
-                  {{ getWorkflowStatusLabel(agent.status) }}
+                  {{ getWorkflowStatusLabel(group.status) }}
                 </ElTag>
+              </div>
+            </div>
 
-                <!-- 时间信息 -->
-                <div v-if="agent.startTime" class="text-xs text-gray-500 mt-2">
-                  <p>开始: {{ formatTime(agent.startTime) }}</p>
-                  <p v-if="agent.endTime">结束: {{ formatTime(agent.endTime) }}</p>
-                </div>
+            <!-- 并行节点 -->
+            <div
+              v-else-if="group.type === 'parallel'"
+              class="relative z-10 parallel-group border-2 rounded-lg p-4 transition-all duration-300"
+              :class="getParallelGroupClass(group.status)"
+            >
+              <div class="parallel-label mb-3 text-sm font-semibold text-gray-700 flex items-center">
+                <ElIcon class="mr-1"><Connection /></ElIcon>
+                {{ group.name }}
+                <ElTag
+                  :type="getWorkflowTagType(group.status)"
+                  size="small"
+                  class="ml-2"
+                >
+                  并行执行
+                </ElTag>
+              </div>
 
-                <!-- 错误信息 -->
-                <div v-if="agent.error" class="text-xs text-red-600 mt-2">
-                  <ElIcon><Warning /></ElIcon>
-                  {{ agent.error }}
+              <div class="grid grid-cols-2 gap-3">
+                <div
+                  v-for="member in group.members"
+                  :key="member.id"
+                  class="parallel-member border rounded-lg p-3 transition-all duration-200"
+                  :class="getParallelMemberClass(member.status)"
+                >
+                  <div class="flex flex-col items-center text-center">
+                    <!-- 状态图标 -->
+                    <div
+                      class="w-8 h-8 rounded-full flex items-center justify-center mb-1"
+                      :class="getWorkflowIconClass(member.status)"
+                    >
+                      <ElIcon class="text-sm">
+                        <component :is="getWorkflowIcon(member.status)" />
+                      </ElIcon>
+                    </div>
+
+                    <!-- 成员名称 -->
+                    <h4 class="text-xs font-semibold text-gray-800">{{ member.name }}</h4>
+
+                    <!-- 状态 -->
+                    <ElTag
+                      :type="getWorkflowTagType(member.status)"
+                      size="small"
+                      class="mt-1"
+                    >
+                      {{ getWorkflowStatusLabel(member.status) }}
+                    </ElTag>
+                  </div>
                 </div>
               </div>
             </div>
@@ -263,8 +332,8 @@ import { useExhibitionStore } from '@/stores/exhibition'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
-import HumanReviewDialog from '@/components/HumanReviewDialog.vue'
-import type { QualityEvaluation } from '@/types/exhibition'
+import HumanReviewDialogSimple from '@/components/HumanReviewDialogSimple.vue'
+import type { QualityEvaluation, AgentGroup } from '@/types/exhibition'
 import {
   Cpu,
   RefreshRight,
@@ -288,8 +357,15 @@ const router = useRouter()
 const exhibitionStore = useExhibitionStore()
 const { connectionStatus } = useWebSocket()
 
-const { agentStatuses, isProcessing, progressPercentage, currentRunningAgent } = toRefs(exhibitionStore)
-// 注意：currentExhibition 不解构，直接使用 exhibitionStore.currentExhibition
+const {
+  agentStatuses,
+  isProcessing,
+  progressPercentage,
+  currentRunningAgent,
+  iterationCount,
+  maxIterations,
+  revisionTarget
+} = toRefs(exhibitionStore)
 
 // 执行日志
 const executionLogs = ref<ExecutionLog[]>([])
@@ -298,8 +374,123 @@ const executionLogs = ref<ExecutionLog[]>([])
 const showReviewDialog = ref(false)
 const currentProjectId = ref('')
 const qualityEvaluation = ref<QualityEvaluation | undefined>(undefined)
-const iterationCount = ref(0)
-const maxIterations = ref(3)
+
+// 智能体组（支持并行）
+const agentGroups = ref<AgentGroup[]>([
+  {
+    id: 'curator',
+    name: '策划智能体',
+    type: 'single',
+    status: 'pending'
+  },
+  {
+    id: 'spatial',
+    name: '空间设计智能体',
+    type: 'single',
+    status: 'pending'
+  },
+  {
+    id: 'parallel_designs',
+    name: '并行设计',
+    type: 'parallel',
+    status: 'pending',
+    members: [
+      {
+        id: 'visual',
+        name: '视觉设计',
+        type: 'single',
+        status: 'pending'
+      },
+      {
+        id: 'interactive',
+        name: '互动技术',
+        type: 'single',
+        status: 'pending'
+      }
+    ]
+  },
+  {
+    id: 'budget',
+    name: '预算控制智能体',
+    type: 'single',
+    status: 'pending'
+  },
+  {
+    id: 'supervisor',
+    name: '协调主管',
+    type: 'single',
+    status: 'pending',
+    isReviewPoint: true
+  }
+])
+
+// 同步 agentGroups 与 agentStatuses
+const syncAgentGroups = () => {
+  if (!agentStatuses.value) return
+
+  agentGroups.value.forEach(group => {
+    if (group.type === 'parallel' && group.members) {
+      // 更新并行组成员状态
+      group.members.forEach(member => {
+        const agent = agentStatuses.value.find(a => a.id === member.id)
+        if (agent) {
+          member.status = agent.status
+          member.startTime = agent.startTime
+          member.endTime = agent.endTime
+        }
+      })
+      // 并行组的状态 = 所有成员的状态
+      const allCompleted = group.members.every(m => m.status === 'completed')
+      const anyRunning = group.members.some(m => m.status === 'running')
+      const anyError = group.members.some(m => m.status === 'error')
+
+      if (allCompleted) {
+        group.status = 'completed'
+      } else if (anyRunning) {
+        group.status = 'running'
+      } else if (anyError) {
+        group.status = 'error'
+      }
+    } else {
+      // 单独节点
+      const agent = agentStatuses.value.find(a => a.id === group.id)
+      if (agent) {
+        group.status = agent.status
+      }
+    }
+  })
+}
+
+// 监听 agentStatuses 变化，同步到 agentGroups
+import { watch } from 'vue'
+watch(agentStatuses, () => {
+  syncAgentGroups()
+}, { deep: true })
+
+// 监听 waitingForHuman 状态，自动弹出审核对话框
+watch(() => exhibitionStore.waitingForHuman, (newValue) => {
+  if (newValue && exhibitionStore.qualityEvaluation) {
+    qualityEvaluation.value = exhibitionStore.qualityEvaluation
+    iterationCount.value = exhibitionStore.iterationCount
+    currentProjectId.value = route.params.id as string || exhibitionStore.currentExhibition?.id || ''
+    showReviewDialog.value = true
+    addLog('info', '⏸️ 等待人工审核')
+  }
+})
+
+// 获取修订目标标签
+const getRevisionTargetLabel = (target: string | null) => {
+  if (!target) return ''
+  const labels: Record<string, string> = {
+    'curator': '策划概念',
+    'spatial_designer': '空间设计',
+    'parallel_designs': '视觉设计 + 互动技术（并行）',
+    'visual_designer': '视觉设计',
+    'interactive_tech': '互动技术',
+    'budget_controller': '预算控制'
+  }
+  return labels[target] || target
+}
 
 // 进度颜色
 const progressColor = computed(() => {
@@ -603,6 +794,27 @@ const formatTime = (date: Date) => {
   return new Date(date).toLocaleTimeString('zh-CN')
 }
 
+// 新增：并行节点样式方法
+const getParallelGroupClass = (status: string) => {
+  const classes = {
+    pending: 'border-gray-300 border-dashed bg-gray-50',
+    running: 'border-blue-400 border-dashed bg-blue-50 animate-pulse-border',
+    completed: 'border-green-400 border-dashed bg-green-50',
+    error: 'border-red-400 border-dashed bg-red-50'
+  }
+  return classes[status as keyof typeof classes] || classes.pending
+}
+
+const getParallelMemberClass = (status: string) => {
+  const classes = {
+    pending: 'border-gray-200 bg-white',
+    running: 'border-blue-300 bg-blue-50',
+    completed: 'border-green-300 bg-green-50',
+    error: 'border-red-300 bg-red-50'
+  }
+  return classes[status as keyof typeof classes] || classes.pending
+}
+
 onMounted(() => {
   // 初始化日志
   addLog('info', '🚀 展陈设计多智能体系统启动')
@@ -642,3 +854,45 @@ onUnmounted(() => {
   }
 })
 </script>
+
+<style scoped>
+/* 并行节点动画 */
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.4);
+  }
+  50% {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 8px rgba(96, 165, 250, 0);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 并行组成员样式 */
+.parallel-member {
+  transition: all 0.3s ease;
+}
+
+.parallel-member:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 审核点徽章动画 */
+@keyframes badge-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.isReviewPoint {
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+</style>

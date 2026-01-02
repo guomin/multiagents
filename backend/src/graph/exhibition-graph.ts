@@ -6,7 +6,7 @@ import { VisualDesignerAgent } from "../agents/visual-designer";
 import { InteractiveTechAgent } from "../agents/interactive-tech";
 import { BudgetControllerAgent } from "../agents/budget-controller";
 import { SupervisorAgent } from "../agents/supervisor";
-import { broadcastAgentStatus, broadcastProgress } from "../index";
+import { broadcastAgentStatus, broadcastProgress, broadcastLog } from "../index";
 import { createLogger } from "../utils/logger";
 import {
   checkBudgetOverrun,
@@ -414,6 +414,7 @@ export class ExhibitionDesignGraph {
       });
 
       broadcastProgress(95, '生成最终报告...');
+      broadcastLog('info', '📋 生成最终报告...');
 
       try {
         const finalReport = await this.supervisor.generateFinalReport(state);
@@ -424,6 +425,7 @@ export class ExhibitionDesignGraph {
         });
 
         broadcastProgress(100, '项目完成');
+        broadcastLog('success', '🎉 展陈设计项目完成！');
 
         logger.info("🎉 展陈设计项目完成！", {
           hasConceptPlan: !!state.conceptPlan,

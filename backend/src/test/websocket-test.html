@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket 测试工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .message-log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            height: 500px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .message-item {
+            padding: 5px;
+            margin-bottom: 5px;
+            border-left: 3px solid #007bff;
+            padding-left: 10px;
+        }
+        .message-item.agentStatus {
+            border-left-color: #28a745;
+        }
+        .message-item.progress {
+            border-left-color: #ffc107;
+        }
+        .message-item.log {
+            border-left-color: #17a2b8;
+        }
+        .message-item.waitingForHuman {
+            border-left-color: #dc3545;
+        }
+        .message-item.iterationUpdate {
+            border-left-color: #6f42c1;
+        }
+        .message-type {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .message-time {
+            color: #6c757d;
+            font-size: 11px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 WebSocket 连接测试工具</h1>
+
+    <div class="container">
+        <div id="status" class="status connecting">状态: 连接中...</div>
+        <div>
+            <button id="connectBtn" onclick="connect()">连接</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>断开</button>
+            <button onclick="clearLog()">清空日志</button>
+            <button onclick="sendTestMessage()">发送测试消息</button>
+        </div>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-number" id="totalMessages">0</div>
+                <div class="stat-label">总消息数</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="agentStatusCount">0</div>
+                <div class="stat-label">agentStatus</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="progressCount">0</div>
+                <div class="stat-label">progress</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="logCount">0</div>
+                <div class="stat-label">log</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="waitingForHumanCount">0</div>
+                <div class="stat-label">waitingForHuman</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="iterationUpdateCount">0</div>
+                <div class="stat-label">iterationUpdate</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📨 消息日志</h2>
+        <div id="messageLog" class="message-log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let messageCounts = {
+            total: 0,
+            agentStatus: 0,
+            progress: 0,
+            log: 0,
+            waitingForHuman: 0,
+            iterationUpdate: 0
+        };
+
+        function connect() {
+            const wsUrl = 'ws://localhost:3001';
+            console.log('🔌 正在连接到:', wsUrl);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket 已连接');
+                updateStatus('connected');
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                addMessage({ type: 'system', message: 'WebSocket 连接成功' });
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('📨 收到消息:', data);
+                    addMessage(data);
+                    updateStats(data.type);
+                } catch (error) {
+                    console.error('解析消息失败:', error);
+                    addMessage({ type: 'error', message: event.data });
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket 错误:', error);
+                addMessage({ type: 'error', message: 'WebSocket 连接错误' });
+            };
+
+            ws.onclose = () => {
+                console.log('🔌 WebSocket 已断开');
+                updateStatus('disconnected');
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+                addMessage({ type: 'system', message: 'WebSocket 连接已断开' });
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function updateStatus(status) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'status ' + status;
+
+            const statusText = {
+                connected: '✅ 已连接',
+                disconnected: '❌ 已断开',
+                connecting: '⏳ 连接中...'
+            };
+            statusEl.textContent = '状态: ' + statusText[status];
+        }
+
+        function addMessage(data) {
+            const log = document.getElementById('messageLog');
+            const time = new Date().toLocaleTimeString();
+
+            messageCounts.total++;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-item ' + (data.type || '');
+
+            let content = '';
+            if (data.type === 'agentStatus') {
+                content = `
+                    <div class="message-type">agentStatus</div>
+                    <div>智能体: ${data.agentId}</div>
+                    <div>状态: ${data.status?.status}</div>
+                    ${data.status?.error ? `<div style="color: red;">错误: ${data.status.error}</div>` : ''}
+                `;
+            } else if (data.type === 'progress') {
+                content = `
+                    <div class="message-type">progress</div>
+                    <div>进度: ${data.progress}%</div>
+                    <div>步骤: ${data.currentStep}</div>
+                `;
+            } else if (data.type === 'log') {
+                content = `
+                    <div class="message-type">log [${data.level}]</div>
+                    <div>${data.message}</div>
+                `;
+            } else if (data.type === 'waitingForHuman') {
+                content = `
+                    <div class="message-type">waitingForHuman ⚠️</div>
+                    <div>质量分数: ${(data.qualityEvaluation?.overallScore * 100).toFixed(1)}分</div>
+                    <div>迭代次数: ${data.iterationCount}</div>
+                    <div>修订目标: ${data.revisionTarget}</div>
+                `;
+            } else if (data.type === 'iterationUpdate') {
+                content = `
+                    <div class="message-type">iterationUpdate 🔄</div>
+                    <div>迭代次数: ${data.iterationCount}</div>
+                    <div>修订目标: ${data.revisionTarget}</div>
+                `;
+            } else if (data.type === 'pong') {
+                content = `<div class="message-type">pong</div><div>心跳响应</div>`;
+            } else {
+                content = `<div class="message-type">${data.type || 'unknown'}</div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+
+            messageDiv.innerHTML = `
+                <div class="message-time">${time}</div>
+                ${content}
+            `;
+
+            log.insertBefore(messageDiv, log.firstChild);
+
+            // 限制日志数量
+            while (log.children.length > 100) {
+                log.removeChild(log.lastChild);
+            }
+        }
+
+        function updateStats(type) {
+            if (messageCounts.hasOwnProperty(type)) {
+                messageCounts[type]++;
+            }
+
+            document.getElementById('totalMessages').textContent = messageCounts.total;
+            document.getElementById('agentStatusCount').textContent = messageCounts.agentStatus;
+            document.getElementById('progressCount').textContent = messageCounts.progress;
+            document.getElementById('logCount').textContent = messageCounts.log;
+            document.getElementById('waitingForHumanCount').textContent = messageCounts.waitingForHuman;
+            document.getElementById('iterationUpdateCount').textContent = messageCounts.iterationUpdate;
+        }
+
+        function clearLog() {
+            document.getElementById('messageLog').innerHTML = '';
+            messageCounts = {
+                total: 0,
+                agentStatus: 0,
+                progress: 0,
+                log: 0,
+                waitingForHuman: 0,
+                iterationUpdate: 0
+            };
+            updateStats('');
+        }
+
+        function sendTestMessage() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+                console.log('📤 已发送 ping 消息');
+                addMessage({ type: 'system', message: '已发送 ping 消息' });
+            } else {
+                alert('WebSocket 未连接');
+            }
+        }
+
+        // 页面加载后自动连接
+        window.onload = () => {
+            connect();
+        };
+    </script>
+</body>
+</html>

@@ -125,7 +125,8 @@ export const ExhibitionStateSchema = z.object({
   // 人在回路相关字段
   humanDecision: z.enum(["approve", "revise", "reject"]).optional().describe("人工决策: approve=通过, revise=修订, reject=拒绝"),
   humanFeedback: z.string().optional().describe("人工反馈意见"),
-  waitingForHuman: z.boolean().default(false).describe("是否等待人工审核")
+  waitingForHuman: z.boolean().default(false).describe("是否等待人工审核"),
+  autoApprove: z.boolean().default(true).describe("是否自动批准（无需人工审核）")
 });
 
 export type ExhibitionState = z.infer<typeof ExhibitionStateSchema>;

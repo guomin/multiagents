@@ -103,6 +103,9 @@ export function useWebSocket() {
 
   const handleWebSocketMessage = (data: any) => {
     try {
+      // 🔍 调试：记录所有收到的消息
+      console.log('📨 [WebSocket] 收到消息:', data.type, data)
+
       switch (data.type) {
         case 'agentStatus':
           // 更新智能体状态
@@ -116,6 +119,14 @@ export function useWebSocket() {
             exhibitionStore.setModelError(data.agentId, data.status.error || '未知错误')
             console.log(`❌ 智能体 ${data.agentId} 出现错误: ${data.status.error}`)
           }
+
+          // 触发自定义事件，让页面可以监听
+          window.dispatchEvent(new CustomEvent('agentStatus', {
+            detail: {
+              agentId: data.agentId,
+              status: data.status
+            }
+          }))
           break
 
         case 'progress':
@@ -125,6 +136,30 @@ export function useWebSocket() {
             exhibitionStore.currentWorkflow.currentStep = data.currentStep
             console.log(`📊 工作流进度: ${data.progress}% - ${data.currentStep}`)
           }
+
+          // 🔑 关键：当进度达到 100% 时，触发工作流完成事件
+          if (data.progress === 100) {
+            console.log('🎉 工作流已完成 (progress=100)')
+            window.dispatchEvent(new CustomEvent('workflow-completed', {
+              detail: {
+                currentStep: data.currentStep,
+                progress: data.progress
+              }
+            }))
+          }
+          break
+
+        case 'log':
+          // 处理日志消息
+          console.log('📝 收到日志:', data.message)
+          // 触发自定义事件，让页面可以监听
+          window.dispatchEvent(new CustomEvent('workflow-log', {
+            detail: {
+              time: new Date().toLocaleTimeString(),
+              type: data.level || 'info', // info, success, warning, error
+              message: data.message
+            }
+          }))
           break
 
         case 'workflowCompleted':
@@ -144,6 +179,38 @@ export function useWebSocket() {
               }
             }
           }
+          break
+
+        // 新增：处理人工审核请求
+        case 'waitingForHuman':
+          console.log('⏸️ 收到人工审核请求:', data)
+          if (data.qualityEvaluation) {
+            exhibitionStore.setWaitingForHuman(data.qualityEvaluation)
+            exhibitionStore.setIterationInfo(data.iterationCount || 0, data.revisionTarget)
+
+            // 触发自定义事件
+            window.dispatchEvent(new CustomEvent('waitingForHuman', {
+              detail: {
+                qualityEvaluation: data.qualityEvaluation,
+                iterationCount: data.iterationCount || 0,
+                revisionTarget: data.revisionTarget
+              }
+            }))
+          }
+          break
+
+        // 新增：处理迭代信息
+        case 'iterationUpdate':
+          console.log('🔄 迭代更新:', data)
+          exhibitionStore.setIterationInfo(data.iterationCount, data.revisionTarget)
+
+          // 触发自定义事件
+          window.dispatchEvent(new CustomEvent('iterationUpdate', {
+            detail: {
+              iterationCount: data.iterationCount,
+              revisionTarget: data.revisionTarget
+            }
+          }))
           break
 
         case 'connectionStatus':

@@ -62,6 +62,21 @@ export const exhibitionAPI = {
     }
   },
 
+  // 提交人工审核决策
+  async submitDecision(projectId: string, decision: 'approve' | 'revise' | 'reject', feedback?: string, revisionTarget?: string): Promise<any> {
+    try {
+      const response = await api.post(`/exhibition/decision/${projectId}`, {
+        decision,
+        feedback,
+        revisionTarget
+      })
+      return response.data
+    } catch (error) {
+      console.error('Failed to submit decision:', error)
+      throw error
+    }
+  },
+
   // 获取工作流状态
   async getWorkflowStatus(id: string): Promise<any> {
     try {
