@@ -14,6 +14,7 @@ import { createLogger } from './utils/logger'
 // import { agentLogger } from './utils/agent-logger'
 import { performanceMonitor } from './utils/performance-monitor'
 import { initializeDatabase } from './database/schema'
+import { initializePrompts } from './prompts'
 
 // 加载环境变量
 if (process.env.NODE_ENV !== "production") {
@@ -26,6 +27,9 @@ const PORT = process.env.PORT || 3001
 
 // 创建主日志记录器
 const mainLogger = createLogger('MAIN')
+
+// 初始化 Prompt 模板
+initializePrompts()
 
 mainLogger.info('🚀 启动多智能体展陈设计系统', {
   nodeEnv: process.env.NODE_ENV || 'development',

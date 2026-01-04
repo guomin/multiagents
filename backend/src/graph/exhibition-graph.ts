@@ -641,7 +641,8 @@ export class ExhibitionDesignGraph {
       maxIterations,
       feedbackHistory: [],
       needsRevision: false,
-      waitingForHuman: false
+      waitingForHuman: false,
+      autoApprove: true  // 默认自动批准模式
     };
 
     logger.info("🚀 启动展陈设计多智能体系统（支持迭代优化）", {

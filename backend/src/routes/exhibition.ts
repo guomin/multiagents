@@ -656,7 +656,7 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
 
         // 更新项目和工作流状态
         const projectIdNum = parseInt(projectId.split('_')[1])
-        projectQueries.updateStatus(projectIdNum, 'completed')
+        projectQueries.updateStatus(String(projectIdNum), 'completed')
         workflowQueries.complete(dbWorkflow.id)
 
         // 广播完成状态

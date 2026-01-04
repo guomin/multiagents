@@ -2,12 +2,16 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { ExhibitionRequirement, ConceptPlan, SpatialLayout } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
+import { promptManager } from "../prompts";
+import { createLogger } from "../utils/logger";
 
 export class SpatialDesignerAgent {
   private llm: ChatOpenAI;
   private modelConfig: ModelConfig;
-
+  private logger = createLogger('SPATIAL-DESIGNER-AGENT');
+  
   constructor(modelName?: string, temperature: number = 0.5) {
+    this.logger.info('🏗️ 初始化空间设计智能体', { modelName, temperature });
     this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
 
     this.llm = new ChatOpenAI({
@@ -24,37 +28,24 @@ export class SpatialDesignerAgent {
     conceptPlan: ConceptPlan,
     revisionReason?: string
   ): Promise<SpatialLayout> {
-    const systemPrompt = `你是一位专业的展陈空间设计师，具有丰富的空间规划和动线设计经验。你需要根据展览需求和概念策划，生成空间布局方案。
-
-请考虑以下方面：
-1. 空间利用的最优化
-2. 参观动线的流畅性
-3. 功能区域的合理性
-4. 无障碍设计的完备性
-
-${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
-- layout: 空间布局的详细描述
-- visitorRoute: 具体的参观路线说明
-- zones: 功能区域划分（名称、面积、功能）
-- accessibility: 无障碍设计说明`;
-
-    const humanPrompt = `请为以下展览${revisionReason ? '（根据反馈意见进行修订）' : ''}生成空间布局方案：
-
-场地信息：
-- 面积：${requirements.venueSpace.area}平方米
-- 层高：${requirements.venueSpace.height}米
-- 布局：${requirements.venueSpace.layout}
-
-展览概念：
-- 核心概念：${conceptPlan.concept}
-- 叙事结构：${conceptPlan.narrative}
-- 重点展品：${conceptPlan.keyExhibits.join(", ")}
-
-${revisionReason ? `\n【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对空间布局进行针对性改进。\n` : ''}请生成符合展览主题的空间设计方案。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'spatial_designer',
+      'generateSpatialLayout',
+      {
+        revisionReason,
+        area: requirements.venueSpace.area,
+        height: requirements.venueSpace.height,
+        layout: requirements.venueSpace.layout,
+        concept: conceptPlan.concept,
+        narrative: conceptPlan.narrative,
+        keyExhibits: conceptPlan.keyExhibits.join(", ")
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);

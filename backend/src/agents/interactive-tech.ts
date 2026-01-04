@@ -3,13 +3,18 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { ExhibitionRequirement, ConceptPlan, InteractiveSolution } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
 import { getTavilySearchService } from "../services/tavily-search";
+import { promptManager } from "../prompts";
+import { createLogger } from "../utils/logger";
 
 export class InteractiveTechAgent {
   private llm: ChatOpenAI;
   private modelConfig: ModelConfig;
   private tavilySearchService = getTavilySearchService(); // Tavily搜索服务
+  private logger = createLogger('INTERACTIVE-TECH-AGENT');
 
   constructor(modelName?: string, temperature: number = 0.5) {
+    this.logger.info('🤖 初始化互动技术智能体', { modelName, temperature });
+
     this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
 
     this.llm = new ChatOpenAI({
@@ -23,7 +28,9 @@ export class InteractiveTechAgent {
     // 初始化Tavily搜索服务（异步）
     this.tavilySearchService.initialize().catch(err => {
       console.error('Tavily搜索服务初始化失败:', err);
+      this.logger.error('Tavily搜索服务初始化失败', err as Error);
     });
+    this.logger.info('✅ LLM客户端初始化完成');
   }
 
   async generateInteractiveSolution(
@@ -47,35 +54,25 @@ export class InteractiveTechAgent {
       console.error('调研失败，继续生成方案:', error);
     }
 
-    const systemPrompt = `你是一位专业的展陈互动技术专家，具有丰富的多媒体设计和互动装置开发经验。你需要根据展览需求和预算，生成互动技术方案。
-
-请考虑以下方面：
-1. 技术的先进性和可靠性
-2. 互动体验的参与性和教育性
-3. 预算的合理性和性价比
-4. 技术实现的可行性
-
-${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
-- technologies: 使用的主要技术列表
-- interactives: 具体的互动装置方案
-- technicalRequirements: 技术实现要求`;
-
-    const humanPrompt = `请为以下展览${revisionReason ? '（根据反馈意见进行修订）' : ''}生成互动技术方案：
-
-展览信息：
-- 预算：${requirements.budget.total} ${requirements.budget.currency}
-- 主题：${requirements.theme}
-- 受众：${requirements.targetAudience}
-
-概念方案：
-- 核心概念：${conceptPlan.concept}
-- 叙事结构：${conceptPlan.narrative}
-
-${researchContext ? `📚 参考资料（来自真实案例）：\n${researchContext}\n\n` : ''}${revisionReason ? `【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对互动技术方案进行针对性改进。\n` : ''}请生成符合预算和主题的互动技术方案。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'interactive_tech',
+      'generateInteractiveSolution',
+      {
+        revisionReason,
+        budget: requirements.budget.total,
+        currency: requirements.budget.currency,
+        theme: requirements.theme,
+        targetAudience: requirements.targetAudience,
+        concept: conceptPlan.concept,
+        narrative: conceptPlan.narrative,
+        researchContext
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);

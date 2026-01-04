@@ -2,12 +2,16 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { ExhibitionRequirement, ConceptPlan, VisualDesign } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
+import { promptManager } from "../prompts";
+import { createLogger } from "../utils/logger";
 
 export class VisualDesignerAgent {
   private llm: ChatOpenAI;
   private modelConfig: ModelConfig;
+  private logger = createLogger('VISUAL-DESIGNER-AGENT');
 
   constructor(modelName?: string, temperature: number = 0.6) {
+    this.logger.info('🎨 初始化视觉设计智能体', { modelName, temperature });
     this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
 
     this.llm = new ChatOpenAI({
@@ -24,36 +28,23 @@ export class VisualDesignerAgent {
     conceptPlan: ConceptPlan,
     revisionReason?: string
   ): Promise<VisualDesign> {
-    const systemPrompt = `你是一位资深的展陈视觉设计师，具有丰富的品牌设计和空间视觉设计经验。你需要根据展览需求和概念，生成视觉设计方案。
-
-请考虑以下方面：
-1. 色彩搭配的协调性和主题相关性
-2. 字体选择的可读性和艺术性
-3. 品牌元素的统一性
-4. 视觉风格的独特性
-
-${revisionReason ? `【重要】这是对上一次方案的修订反馈，请仔细阅读并根据反馈意见进行改进：\n${revisionReason}\n\n` : ''}输出格式：
-- colorScheme: 色彩方案（主色、辅助色）
-- typography: 字体设计说明
-- brandElements: 品牌视觉元素
-- visualStyle: 整体视觉风格描述`;
-
-    const humanPrompt = `请为以下展览${revisionReason ? '（根据反馈意见进行修订）' : ''}生成视觉设计方案：
-
-展览信息：
-- 标题：${requirements.title}
-- 主题：${requirements.theme}
-- 目标受众：${requirements.targetAudience}
-
-概念方案：
-- 核心概念：${conceptPlan.concept}
-- 叙事结构：${conceptPlan.narrative}
-
-${revisionReason ? `\n【修订反馈】\n${revisionReason}\n\n请根据以上反馈意见，对视觉设计进行针对性改进。\n` : ''}请生成符合展览主题和受众的视觉设计方案。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'visual_designer',
+      'generateVisualDesign',
+      {
+        revisionReason,
+        title: requirements.title,
+        theme: requirements.theme,
+        targetAudience: requirements.targetAudience,
+        concept: conceptPlan.concept,
+        narrative: conceptPlan.narrative
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);

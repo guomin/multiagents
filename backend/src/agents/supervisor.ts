@@ -2,12 +2,16 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { ExhibitionState, QualityEvaluation } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
+import { promptManager } from "../prompts";
+import { createLogger } from "../utils/logger";
 
 export class SupervisorAgent {
   private llm: ChatOpenAI;
   private modelConfig: ModelConfig;
+  private logger = createLogger('SUPERVISOR-AGENT');
 
   constructor(modelName?: string, temperature: number = 0.5) {
+    this.logger.info('🛡️ 初始化监督智能体', { modelName, temperature });
     this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
 
     this.llm = new ChatOpenAI({
@@ -24,38 +28,27 @@ export class SupervisorAgent {
     recommendations: string[];
     issues: string[];
   }> {
-    const systemPrompt = `你是展陈设计多智能体系统的协调主管。你需要分析当前项目的进展状态，确定下一步行动，并提供专业建议。
-
-你的职责包括：
-1. 分析各智能体的工作进展
-2. 识别潜在的问题和冲突
-3. 协调各专业领域的工作
-4. 确保项目质量和进度
-
-请输出：
-- nextAction: 下一步应该执行的操作
-- recommendations: 改进建议
-- issues: 发现的问题或风险`;
-
-    const humanPrompt = `请分析当前展陈设计项目的状态：
-
-当前步骤：${state.currentStep}
-已有成果：
-${state.conceptPlan ? "✅ 概念策划已完成" : "❌ 概念策划待完成"}
-${state.spatialLayout ? "✅ 空间设计已完成" : "❌ 空间设计待完成"}
-${state.visualDesign ? "✅ 视觉设计已完成" : "❌ 视觉设计待完成"}
-${state.interactiveSolution ? "✅ 互动技术方案已完成" : "❌ 互动技术方案待完成"}
-${state.budgetEstimate ? "✅ 预算估算已完成" : "❌ 预算估算待完成"}
-
-展览信息：${state.requirements.title}
-主题：${state.requirements.theme}
-预算：${state.requirements.budget.total} ${state.requirements.budget.currency}
-
-请提供分析和建议。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'supervisor',
+      'analyzeProgress',
+      {
+        currentStep: state.currentStep,
+        hasConceptPlan: !!state.conceptPlan,
+        hasSpatialLayout: !!state.spatialLayout,
+        hasVisualDesign: !!state.visualDesign,
+        hasInteractiveSolution: !!state.interactiveSolution,
+        hasBudgetEstimate: !!state.budgetEstimate,
+        title: state.requirements.title,
+        theme: state.requirements.theme,
+        budget: state.requirements.budget.total,
+        currency: state.requirements.budget.currency
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);
@@ -165,92 +158,31 @@ ${this.getProjectCompletionStatus(state)}
    * 评估当前设计方案的质量
    */
   async evaluateQuality(state: ExhibitionState): Promise<QualityEvaluation> {
-    const systemPrompt = `你是展陈设计系统的质量评估专家。你需要全面评估当前设计方案的质量，并提供客观的分数和建设性的反馈。
-
-评估维度（每个维度0-1分）：
-1. 概念策划（conceptScore）：创意性、主题契合度、叙事逻辑
-2. 空间设计（spatialScore）：布局合理性、动线流畅度、功能完整性
-3. 视觉设计（visualScore）：美学价值、品牌一致性、可实施性
-4. 互动技术（interactiveScore）：技术可行性、用户体验、创新性
-5. 预算合理性（budgetScore）：成本控制、性价比、风险控制
-
-输出格式（JSON）：
-{
-  "overallScore": 0.85,
-  "conceptScore": 0.9,
-  "spatialScore": 0.8,
-  "visualScore": 0.85,
-  "interactiveScore": 0.8,
-  "budgetScore": 0.85,
-  "feedback": "总体评价...",
-  "revisionTarget": "none" | "curator" | "spatial_designer" | "visual_designer" | "interactive_tech" | "budget_controller"
-}
-
-评估标准：
-- 0.9-1.0：优秀，可直接通过
-- 0.75-0.9：良好，有小问题可忽略
-- 0.6-0.75：合格，需要轻微修订
-- 0.6以下：不合格，需要大幅修订
-
-如果需要修订，revisionTarget 应该指向需要改进的节点。如果总体分数低于0.6，建议返回 curator 重新规划。
-如果有多个问题，优先选择分数最低的对应节点。`;
-
-    const humanPrompt = `请评估以下展陈设计方案：
-
-【项目信息】
-- 标题：${state.requirements.title}
-- 主题：${state.requirements.theme}
-- 预算：${state.requirements.budget.total} ${state.requirements.budget.currency}
-
-【当前迭代】第 ${state.iterationCount + 1} 次（最多 ${state.maxIterations} 次）
-
-【设计方案】
-${state.conceptPlan ? `
-1. 概念策划：
-   - 核心概念：${state.conceptPlan.concept}
-   - 叙事结构：${state.conceptPlan.narrative}
-   - 重点展品：${state.conceptPlan.keyExhibits.join(", ")}
-   - 观众动线：${state.conceptPlan.visitorFlow}
-` : "❌ 概念策划未完成"}
-
-${state.spatialLayout ? `
-2. 空间设计：
-   - 布局：${state.spatialLayout.layout}
-   - 参观路线：${state.spatialLayout.visitorRoute.join(" → ")}
-   - 功能区域：${state.spatialLayout.zones.map(z => `${z.name}(${z.area}㎡)`).join(", ")}
-` : "❌ 空间设计未完成"}
-
-${state.visualDesign ? `
-3. 视觉设计：
-   - 色彩方案：${state.visualDesign.colorScheme.join(", ")}
-   - 字体设计：${state.visualDesign.typography}
-   - 品牌元素：${state.visualDesign.brandElements.join(", ")}
-   - 视觉风格：${state.visualDesign.visualStyle}
-` : "❌ 视觉设计未完成"}
-
-${state.interactiveSolution ? `
-4. 互动技术：
-   - 使用技术：${state.interactiveSolution.technologies.join(", ")}
-   - 互动装置：${state.interactiveSolution.interactives.map(i => `${i.name}: ${i.description}`).join("; ")}
-` : "❌ 互动技术方案未完成"}
-
-${state.budgetEstimate ? `
-5. 预算估算：
-   - 总成本：${state.budgetEstimate.totalCost} ${state.requirements.budget.currency}
-   - 预算明细：${state.budgetEstimate.breakdown.map(b => `${b.category}: ${b.amount}`).join(", ")}
-   - 优化建议：${state.budgetEstimate.recommendations.join("; ")}
-` : "❌ 预算估算未完成"}
-
-${state.feedbackHistory.length > 0 ? `
-【历史反馈】
-${state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")}
-` : ""}
-
-请进行全面的质量评估，输出 JSON 格式的评估结果。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'supervisor',
+      'evaluateQuality',
+      {
+        title: state.requirements.title,
+        theme: state.requirements.theme,
+        budget: state.requirements.budget.total,
+        currency: state.requirements.budget.currency,
+        iterationCount: state.iterationCount + 1,
+        maxIterations: state.maxIterations,
+        conceptPlan: state.conceptPlan ? JSON.stringify(state.conceptPlan) : '',
+        spatialLayout: state.spatialLayout ? JSON.stringify(state.spatialLayout) : '',
+        visualDesign: state.visualDesign ? JSON.stringify(state.visualDesign) : '',
+        interactiveSolution: state.interactiveSolution ? JSON.stringify(state.interactiveSolution) : '',
+        budgetEstimate: state.budgetEstimate ? JSON.stringify(state.budgetEstimate) : '',
+        feedbackHistory: state.feedbackHistory.length > 0
+          ? state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")
+          : ""
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);
