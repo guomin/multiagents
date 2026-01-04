@@ -926,11 +926,27 @@ onMounted(() => {
     // 更新审核状态为已完成
     reviewStatus.value = 'completed'
 
+    // 🔑 关键：更新 human_decision 和 finalize 节点状态为已完成
+    const now = new Date()
+    agentStatusMap.value['human_decision'] = {
+      status: 'completed',
+      startTime: now,
+      endTime: now
+    }
+    agentStatusMap.value['finalize'] = {
+      status: 'completed',
+      startTime: now,
+      endTime: now
+    }
+
     // 更新完成步骤
     completedSteps.value = ['requirements', 'collaboration', 'parallel_execution', 'review', 'results']
 
     // 切换到最终结果步骤
     currentStep.value = 'results'
+
+    // 重新初始化 agentGroups 以反映最新状态
+    initializeAgentGroups()
 
     addLog('success', '✅ 工作流已完成')
     addLog('info', '📍 已自动切换到结果步骤')

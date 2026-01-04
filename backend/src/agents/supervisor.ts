@@ -169,11 +169,33 @@ ${this.getProjectCompletionStatus(state)}
         currency: state.requirements.budget.currency,
         iterationCount: state.iterationCount + 1,
         maxIterations: state.maxIterations,
-        conceptPlan: state.conceptPlan ? JSON.stringify(state.conceptPlan) : '',
-        spatialLayout: state.spatialLayout ? JSON.stringify(state.spatialLayout) : '',
-        visualDesign: state.visualDesign ? JSON.stringify(state.visualDesign) : '',
-        interactiveSolution: state.interactiveSolution ? JSON.stringify(state.interactiveSolution) : '',
-        budgetEstimate: state.budgetEstimate ? JSON.stringify(state.budgetEstimate) : '',
+        // 概念策划字段
+        conceptPlan: !!state.conceptPlan,
+        concept: state.conceptPlan?.concept || '',
+        narrative: state.conceptPlan?.narrative || '',
+        keyExhibits: state.conceptPlan?.keyExhibits?.join(", ") || '',
+        visitorFlow: state.conceptPlan?.visitorFlow || '',
+        // 空间设计字段
+        spatialLayout: !!state.spatialLayout,
+        layout: state.spatialLayout?.layout || '',
+        visitorRoute: state.spatialLayout?.visitorRoute?.join(" → ") || '',
+        zones: state.spatialLayout?.zones?.map(z => `${z.name}(${z.area}㎡)`).join(", ") || '',
+        // 视觉设计字段
+        visualDesign: !!state.visualDesign,
+        colorScheme: state.visualDesign?.colorScheme?.join(", ") || '',
+        typography: state.visualDesign?.typography || '',
+        brandElements: state.visualDesign?.brandElements?.join(", ") || '',
+        visualStyle: state.visualDesign?.visualStyle || '',
+        // 互动技术字段
+        interactiveSolution: !!state.interactiveSolution,
+        technologies: state.interactiveSolution?.technologies?.join(", ") || '',
+        interactives: state.interactiveSolution?.interactives?.map(i => `${i.name}: ${i.description}`).join("; ") || '',
+        // 预算估算字段
+        budgetEstimate: !!state.budgetEstimate,
+        totalCost: state.budgetEstimate?.totalCost?.toString() || '',
+        breakdown: state.budgetEstimate?.breakdown?.map(b => `${b.category}: ${b.amount}`).join(", ") || '',
+        recommendations: state.budgetEstimate?.recommendations?.join("; ") || '',
+        // 历史反馈
         feedbackHistory: state.feedbackHistory.length > 0
           ? state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")
           : ""
