@@ -373,6 +373,125 @@ const exhibitionStore = useExhibitionStore()
 
 const loading = ref(true)
 
+// 从 JSON 字符串中提取字段值
+const extractFromJsonString = (jsonString: string, fieldName: string): string => {
+  if (!jsonString) return ''
+
+  try {
+    // 尝试解析 JSON
+    const parsed = JSON.parse(jsonString)
+    // 如果有指定字段，返回该字段；否则返回整个对象转为字符串
+    return parsed[fieldName] || jsonString
+  } catch {
+    // JSON 解析失败，使用正则表达式提取字段值
+    const regex = new RegExp(`"${fieldName}"\\s*:\\s*"([^"]*)"`, 's')
+    const match = jsonString.match(regex)
+    if (match && match[1]) {
+      return match[1]
+    }
+
+    // 如果正则也失败，返回原字符串
+    return jsonString
+  }
+}
+
+// 清理 Markdown 代码块标记（用于 JSON 解析前）
+const removeCodeBlockMarkers = (text: string): string => {
+  if (!text) return ''
+  let cleaned = text
+
+  // 移除 ```json, ```javascript 等代码块开始标记
+  cleaned = cleaned.replace(/^```(?:json|javascript|js)?\s*\n?/i, '')
+  // 移除代码块结束标记 ```
+  cleaned = cleaned.replace(/\n?```$/m, '')
+
+  return cleaned.trim()
+}
+
+// 清理优化建议数组
+const cleanRecommendations = (recommendations: string[]): string[] => {
+  if (!Array.isArray(recommendations)) return []
+
+  const MAX_RECOMMENDATION_LENGTH = 300 // 最大建议长度（字符数）
+
+  return recommendations
+    .filter(rec => {
+      if (!rec || typeof rec !== 'string') return false
+
+      const cleanedRec = rec.trim()
+
+      // 过滤掉明显异常的建议
+      // 1. 过滤包含整个报告内容的建议（包含"预算明细"、"总成本估算"等关键词）
+      const invalidKeywords = ['预算明细', '总成本估算', 'breakdown', 'totalCost', '项目细分', '估算金额']
+      if (invalidKeywords.some(keyword => cleanedRec.includes(keyword))) {
+        console.warn('⚠️ [Results] 过滤掉异常建议（包含报告关键词）:', cleanedRec.substring(0, 50))
+        return false
+      }
+
+      // 2. 过滤过长的建议（超过最大长度）
+      if (cleanedRec.length > MAX_RECOMMENDATION_LENGTH) {
+        console.warn('⚠️ [Results] 过滤掉过长的建议:', cleanedRec.length, '字符')
+        return false
+      }
+
+      // 3. 过滤纯数字或编号的建议
+      if (/^\d+$/.test(cleanedRec)) {
+        console.warn('⚠️ [Results] 过滤掉纯数字建议:', cleanedRec)
+        return false
+      }
+
+      return true
+    })
+    .map(rec => {
+      // 清理每条建议的格式
+      let cleaned = rec.trim()
+
+      // 移除 Markdown 代码块标记
+      cleaned = removeCodeBlockMarkers(cleaned)
+
+      // 移除开头的数字编号（如 "1. "、"1、"）
+      cleaned = cleaned.replace(/^\d+\.?\s*/, '')
+
+      // 移除 Markdown 格式
+      cleaned = cleanMarkdownText(cleaned)
+
+      return cleaned
+    })
+    .filter(rec => rec.length > 10) // 过滤掉清理后过短的建议（小于10字符）
+}
+
+// 清理 Markdown 格式文本，提取纯文本内容
+const cleanMarkdownText = (text: string): string => {
+  if (!text) return ''
+
+  let cleaned = text
+
+  // 先移除代码块标记
+  cleaned = removeCodeBlockMarkers(cleaned)
+
+  // 移除 Markdown 标题符号
+  cleaned = cleaned.replace(/^#{1,6}\s+/gm, '')
+
+  // 移除加粗标记
+  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1')
+  cleaned = cleaned.replace(/__(.*?)__/g, '$1')
+
+  // 移除斜体标记
+  cleaned = cleaned.replace(/\*(.*?)\*/g, '$1')
+  cleaned = cleaned.replace(/_(.*?)_/g, '$1')
+
+  // 移除行内代码标记
+  cleaned = cleaned.replace(/`([^`]+)`/g, '$1')
+
+  // 清理多余的换行
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
+
+  // 移除开头和结尾的空白
+  cleaned = cleaned.trim()
+
+  return cleaned
+}
+
 // 直接使用 store 的响应式引用，而不是解构
 const currentWorkflow = computed(() => exhibitionStore.currentWorkflow)
 const agentStatuses = computed(() => exhibitionStore.agentStatuses)
@@ -425,12 +544,160 @@ const loadProjectData = async () => {
         messages: ['展陈设计已完成']
       }
 
-      // 解析 JSON 字符串
-      if (workflowData.conceptPlan) workflowData.conceptPlan = JSON.parse(workflowData.conceptPlan)
-      if (workflowData.spatialLayout) workflowData.spatialLayout = JSON.parse(workflowData.spatialLayout)
-      if (workflowData.visualDesign) workflowData.visualDesign = JSON.parse(workflowData.visualDesign)
-      if (workflowData.interactiveSolution) workflowData.interactiveSolution = JSON.parse(workflowData.interactiveSolution)
-      if (workflowData.budgetEstimate) workflowData.budgetEstimate = JSON.parse(workflowData.budgetEstimate)
+      // 解析 JSON 字符串（添加错误处理）
+      try {
+        if (workflowData.conceptPlan) {
+          workflowData.conceptPlan = JSON.parse(workflowData.conceptPlan)
+
+          // 处理 concept 字段
+          if (workflowData.conceptPlan.concept) {
+            let conceptText = workflowData.conceptPlan.concept
+
+            // 如果是字符串，需要处理可能的嵌套 JSON
+            if (typeof conceptText === 'string') {
+              // 先移除 Markdown 代码块标记
+              conceptText = removeCodeBlockMarkers(conceptText)
+
+              // 如果看起来像 JSON 对象，提取 concept 字段的值
+              if (conceptText.trim().startsWith('{')) {
+                conceptText = extractFromJsonString(conceptText, 'concept')
+              }
+
+              // 最后清理剩余的 Markdown 格式
+              conceptText = cleanMarkdownText(conceptText)
+            }
+
+            workflowData.conceptPlan.concept = conceptText
+          }
+
+          // 处理 narrative 字段
+          if (workflowData.conceptPlan.narrative) {
+            let narrativeText = workflowData.conceptPlan.narrative
+
+            // 如果是字符串，需要处理可能的嵌套 JSON
+            if (typeof narrativeText === 'string') {
+              // 先移除 Markdown 代码块标记
+              narrativeText = removeCodeBlockMarkers(narrativeText)
+
+              // 如果看起来像 JSON 对象，提取 narrative 字段的值
+              if (narrativeText.trim().startsWith('{')) {
+                narrativeText = extractFromJsonString(narrativeText, 'narrative')
+              }
+
+              // 最后清理剩余的 Markdown 格式
+              narrativeText = cleanMarkdownText(narrativeText)
+            }
+
+            workflowData.conceptPlan.narrative = narrativeText
+          }
+        }
+
+        // 处理空间设计
+        if (workflowData.spatialLayout) {
+          workflowData.spatialLayout = JSON.parse(workflowData.spatialLayout)
+
+          // 处理 layout 字段
+          if (workflowData.spatialLayout.layout) {
+            let layoutText = workflowData.spatialLayout.layout
+            if (typeof layoutText === 'string') {
+              layoutText = removeCodeBlockMarkers(layoutText)
+              if (layoutText.trim().startsWith('{')) {
+                layoutText = extractFromJsonString(layoutText, 'layout')
+              }
+              layoutText = cleanMarkdownText(layoutText)
+            }
+            workflowData.spatialLayout.layout = layoutText
+          }
+
+          // 处理 visitorRoute 字段
+          if (workflowData.spatialLayout.visitorRoute && Array.isArray(workflowData.spatialLayout.visitorRoute)) {
+            workflowData.spatialLayout.visitorRoute = workflowData.spatialLayout.visitorRoute.map((route: string) => {
+              if (typeof route === 'string') {
+                route = removeCodeBlockMarkers(route)
+                route = cleanMarkdownText(route)
+              }
+              return route
+            })
+          }
+        }
+
+        // 处理视觉设计
+        if (workflowData.visualDesign) {
+          workflowData.visualDesign = JSON.parse(workflowData.visualDesign)
+
+          // 处理 typography 字段
+          if (workflowData.visualDesign.typography) {
+            let typographyText = workflowData.visualDesign.typography
+            if (typeof typographyText === 'string') {
+              typographyText = removeCodeBlockMarkers(typographyText)
+              if (typographyText.trim().startsWith('{')) {
+                typographyText = extractFromJsonString(typographyText, 'typography')
+              }
+              typographyText = cleanMarkdownText(typographyText)
+            }
+            workflowData.visualDesign.typography = typographyText
+          }
+
+          // 处理 visualStyle 字段
+          if (workflowData.visualDesign.visualStyle) {
+            let styleText = workflowData.visualDesign.visualStyle
+            if (typeof styleText === 'string') {
+              styleText = removeCodeBlockMarkers(styleText)
+              if (styleText.trim().startsWith('{')) {
+                styleText = extractFromJsonString(styleText, 'visualStyle')
+              }
+              styleText = cleanMarkdownText(styleText)
+            }
+            workflowData.visualDesign.visualStyle = styleText
+          }
+        }
+
+        // 处理互动技术
+        if (workflowData.interactiveSolution) {
+          workflowData.interactiveSolution = JSON.parse(workflowData.interactiveSolution)
+
+          // 处理 interactives 数组中的 description 字段
+          if (workflowData.interactiveSolution.interactives && Array.isArray(workflowData.interactiveSolution.interactives)) {
+            workflowData.interactiveSolution.interactives = workflowData.interactiveSolution.interactives.map((interactive: any) => {
+              if (interactive.description && typeof interactive.description === 'string') {
+                interactive.description = removeCodeBlockMarkers(interactive.description)
+                interactive.description = cleanMarkdownText(interactive.description)
+              }
+              return interactive
+            })
+          }
+        }
+
+        // 处理预算估算
+        if (workflowData.budgetEstimate) {
+          workflowData.budgetEstimate = JSON.parse(workflowData.budgetEstimate)
+
+          // 处理 breakdown 数组中的 description 字段
+          if (workflowData.budgetEstimate.breakdown && Array.isArray(workflowData.budgetEstimate.breakdown)) {
+            workflowData.budgetEstimate.breakdown = workflowData.budgetEstimate.breakdown.map((item: any) => {
+              if (item.description && typeof item.description === 'string') {
+                item.description = removeCodeBlockMarkers(item.description)
+                item.description = cleanMarkdownText(item.description)
+              }
+              return item
+            })
+          }
+
+          // 处理 recommendations 数组 - 使用专门的清理函数
+          if (workflowData.budgetEstimate.recommendations && Array.isArray(workflowData.budgetEstimate.recommendations)) {
+            const originalCount = workflowData.budgetEstimate.recommendations.length
+            workflowData.budgetEstimate.recommendations = cleanRecommendations(workflowData.budgetEstimate.recommendations)
+            const cleanedCount = workflowData.budgetEstimate.recommendations.length
+
+            if (originalCount !== cleanedCount) {
+              console.log(`✅ [Results] 优化建议清理完成: ${originalCount} → ${cleanedCount} 条`)
+            }
+          }
+        }
+      } catch (parseError) {
+        console.error('❌ [Results] JSON 解析失败:', parseError)
+        ElMessage.warning('部分数据解析失败，将显示原始数据')
+      }
 
       exhibitionStore.completeProcessing(workflowData)
       console.log('✅ [Results] 项目数据加载成功')
