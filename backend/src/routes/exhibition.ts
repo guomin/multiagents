@@ -323,6 +323,11 @@ async function runExhibitionAsync(
     if (result.budgetEstimate) {
       designResultQueries.save(dbWorkflow.id, 'budget', JSON.stringify(result.budgetEstimate))
     }
+    // 保存最终报告
+    if (result.finalReport) {
+      designResultQueries.save(dbWorkflow.id, 'report', result.finalReport)
+      logger.info('最终报告已保存到数据库', { workflowId: dbWorkflow.id })
+    }
 
     // 6. 更新项目和工作流状态为完成
     projectQueries.updateStatus(dbProject.id, 'completed')
@@ -420,16 +425,30 @@ router.get('/exhibition/export/:id', async (req, res) => {
     const { id } = req.params
     const { format = 'markdown' } = req.query
 
+    logger.info('导出报告', { projectId: id, format })
+
     // 生成报告内容
-    const reportContent = generateReport(id, format as string)
+    const reportContent = await generateReport(id, format as string)
 
     // 设置响应头
     const filename = `exhibition-report-${id}.${format}`
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-    res.setHeader('Content-Type', getContentType(format as string))
 
-    res.send(reportContent)
+    // 根据格式设置响应
+    if (format === 'pdf') {
+      // PDF 格式：返回 Buffer
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      res.setHeader('Content-Type', 'application/pdf')
+      res.send(reportContent)
+    } else {
+      // 其他格式：返回字符串
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      res.setHeader('Content-Type', getContentType(format as string))
+      res.send(reportContent)
+    }
+
+    logger.info('报告导出成功', { projectId: id, format, contentLength: reportContent?.length || 0 })
   } catch (error) {
+    logger.error('导出报告失败', error as Error)
     res.status(500).json({
       error: 'Failed to export report',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -438,70 +457,310 @@ router.get('/exhibition/export/:id', async (req, res) => {
 })
 
 // 生成报告内容
-function generateReport(id: string, format: string): string {
-  const reportData = {
-    title: '展陈设计报告',
-    project: {
-      id,
-      name: '数字艺术的未来',
-      theme: '探索人工智能与数字艺术的融合创新',
-      budget: '500,000 CNY',
-      duration: '3个月'
-    },
-    results: {
-      concept: '通过AI技术重新定义艺术创作边界...',
-      spatial: '环形空间布局，中央为互动体验区...',
-      visual: '现代简约风格，以蓝色和紫色为主色调...',
-      interactive: '包含AR体验、互动投影、AI创作等...',
-      budget: {
-        total: 500000,
-        breakdown: [
-          { category: '空间设计', amount: 175000 },
-          { category: '视觉设计', amount: 125000 },
-          { category: '互动技术', amount: 100000 },
-          { category: '其他费用', amount: 100000 }
-        ]
-      }
-    }
+async function generateReport(id: string, format: string): Promise<string | Buffer> {
+  // 从数据库查询项目数据
+  const project = projectQueries.getById(id)
+
+  if (!project) {
+    throw new Error(`项目 ${id} 不存在`)
   }
 
-  if (format === 'markdown') {
-    return `
-# ${reportData.title}
+  // 查询项目的工作流
+  const workflows = workflowQueries.getByProjectId(id)
+  if (workflows.length === 0) {
+    throw new Error(`项目 ${id} 没有工作流记录`)
+  }
 
-## 项目信息
-- **项目ID**: ${reportData.project.id}
-- **项目名称**: ${reportData.project.name}
-- **主题**: ${reportData.project.theme}
-- **预算**: ${reportData.project.budget}
-- **展期**: ${reportData.project.duration}
+  const latestWorkflow = workflows[0] // 获取最新工作流
+  const designResults = designResultQueries.getByWorkflowId(latestWorkflow.id)
+
+  // 查找报告
+  const reportResult = designResults.find(r => r.result_type === 'report')
+
+  let markdown: string
+
+  if (reportResult) {
+    // 如果数据库中已有报告，直接返回
+    logger.info('从数据库读取报告', { projectId: id, workflowId: latestWorkflow.id })
+    markdown = reportResult.result_data
+  } else {
+    // 如果数据库中没有报告，从设计结果动态生成
+    logger.info('数据库中无报告，从设计结果动态生成', { projectId: id, workflowId: latestWorkflow.id })
+
+    const conceptResult = designResults.find(r => r.result_type === 'concept')
+    const spatialResult = designResults.find(r => r.result_type === 'spatial')
+    const visualResult = designResults.find(r => r.result_type === 'visual')
+    const interactiveResult = designResults.find(r => r.result_type === 'interactive')
+    const budgetResult = designResults.find(r => r.result_type === 'budget')
+
+    // 生成 Markdown 内容
+    markdown = generateMarkdownFromResults(project, conceptResult, spatialResult, visualResult, interactiveResult, budgetResult, designResults)
+  }
+
+  // 如果是 Markdown 格式，直接返回
+  if (format === 'markdown') {
+    return markdown
+  }
+
+  // 如果是 PDF 格式，将 Markdown 转换为 PDF
+  if (format === 'pdf') {
+    logger.info('开始生成 PDF')
+    const pdfBuffer = await generatePdfFromMarkdown(markdown)
+    logger.info('PDF 生成成功', { size: pdfBuffer.length })
+    return pdfBuffer
+  }
+
+  // 其他格式返回 JSON
+  return JSON.stringify({
+    project,
+    designResults: designResults.map(r => ({
+      type: r.result_type,
+      data: r.result_data
+    }))
+  }, null, 2)
+}
+
+/**
+ * 从设计结果生成 Markdown
+ */
+function generateMarkdownFromResults(
+  project: any,
+  conceptResult: any,
+  spatialResult: any,
+  visualResult: any,
+  interactiveResult: any,
+  budgetResult: any,
+  designResults: any[]
+): string {
+  let markdown = `# 展陈设计项目报告
+
+## 项目概述
+- **展览名称**: ${project.title}
+- **展览主题**: ${project.theme}
+- **目标受众**: ${project.target_audience || '未指定'}
+- **展期**: ${project.start_date} 至 ${project.end_date}
+- **场地面积**: ${project.venue_area}平方米
+- **预算**: ${project.budget_total.toLocaleString()} ${project.budget_currency}
 
 ## 设计方案
 
-### 概念策划
-${reportData.results.concept}
+`
 
-### 空间设计
-${reportData.results.spatial}
+  // 概念策划
+  if (conceptResult) {
+    try {
+      const concept = JSON.parse(conceptResult.result_data)
+      markdown += `### 1. 概念策划
 
-### 视觉设计
-${reportData.results.visual}
+**核心概念**: ${concept.concept || '未提供'}
 
-### 互动技术
-${reportData.results.interactive}
+**叙事结构**: ${concept.narrative || '未提供'}
 
-### 预算分析
-**总预算**: ¥${reportData.results.budget.total.toLocaleString()}
+**重点展品**: ${concept.keyExhibits?.join(', ') || '未提供'}
 
-**明细**:
-${reportData.results.budget.breakdown.map(item =>
-  `- ${item.category}: ¥${item.amount.toLocaleString()}`
-).join('\n')}
-    `
+**参观流程**: ${concept.visitorFlow || '未提供'}
+
+`
+    } catch (e) {
+      markdown += `### 1. 概念策划
+
+数据解析失败
+
+`
+    }
   }
 
-  // 其他格式可以在这里实现
-  return JSON.stringify(reportData, null, 2)
+  // 空间设计
+  if (spatialResult) {
+    try {
+      const spatial = JSON.parse(spatialResult.result_data)
+      markdown += `### 2. 空间设计
+
+**布局方案**: ${spatial.layout || '未提供'}
+
+**参观路线**: ${spatial.visitorRoute?.join(' → ') || '未提供'}
+
+**功能区域**:
+${spatial.zones?.map((z: any) => `- ${z.name}: ${z.area}㎡ (${z.function})`).join('\n') || '未提供'}
+
+`
+    } catch (e) {
+      markdown += `### 2. 空间设计
+
+数据解析失败
+
+`
+    }
+  }
+
+  // 视觉设计
+  if (visualResult) {
+    try {
+      const visual = JSON.parse(visualResult.result_data)
+      markdown += `### 3. 视觉设计
+
+**色彩方案**: ${visual.colorScheme?.join(', ') || '未提供'}
+
+**字体设计**: ${visual.typography || '未提供'}
+
+**品牌元素**: ${visual.brandElements?.join(', ') || '未提供'}
+
+**视觉风格**: ${visual.visualStyle || '未提供'}
+
+`
+    } catch (e) {
+      markdown += `### 3. 视觉设计
+
+数据解析失败
+
+`
+    }
+  }
+
+  // 互动技术
+  if (interactiveResult) {
+    try {
+      const interactive = JSON.parse(interactiveResult.result_data)
+      markdown += `### 4. 互动技术
+
+**使用技术**: ${interactive.technologies?.join(', ') || '未提供'}
+
+**互动装置**:
+${interactive.interactives?.map((i: any) => `- **${i.name}** (${i.type}): ${i.description}${i.cost ? ` - 成本: ¥${i.cost.toLocaleString()}` : ''}`).join('\n') || '未提供'}
+
+`
+    } catch (e) {
+      markdown += `### 4. 互动技术
+
+数据解析失败
+
+`
+    }
+  }
+
+  // 预算估算
+  if (budgetResult) {
+    try {
+      const budget = JSON.parse(budgetResult.result_data)
+      markdown += `### 5. 预算估算
+
+**总成本**: ${budget.totalCost?.toLocaleString() || '未提供'} ${project.budget_currency}
+
+**预算明细**:
+${budget.breakdown?.map((b: any) => `- **${b.category}**: ${b.description || ''} - ${b.amount?.toLocaleString() || '未提供'} ${project.budget_currency}`).join('\n') || '未提供'}
+
+**优化建议**:
+${budget.recommendations?.map((r: string) => `- ${r}`).join('\n') || '无'}
+
+`
+    } catch (e) {
+      markdown += `### 5. 预算估算
+
+数据解析失败
+
+`
+    }
+  }
+
+  // 添加项目完成状态
+  const completedSteps = [conceptResult, spatialResult, visualResult, interactiveResult, budgetResult].filter(Boolean).length
+
+  markdown += `## 项目状态
+
+**完成度**: ${Math.round((completedSteps / 5) * 100)}% (${completedSteps}/5个阶段已完成)
+
+**项目状态**: ${project.status === 'completed' ? '已完成' : '进行中'}
+
+**创建时间**: ${new Date(project.created_at).toLocaleString('zh-CN')}
+
+---
+
+*本报告由展陈设计多智能体系统自动生成*
+`
+
+  return markdown
+}
+
+/**
+ * 将 Markdown 转换为 PDF
+ */
+async function generatePdfFromMarkdown(markdown: string): Promise<Buffer> {
+  const { marked } = await import('marked')
+  const puppeteer = await import('puppeteer')
+
+  // 1. 将 Markdown 转换为 HTML
+  const htmlContent = marked(markdown)
+
+  // 2. 创建完整的 HTML 文档（包含样式）
+  const fullHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #1f2937;
+      border-bottom: 2px solid #3b82f6;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #374151;
+      margin-top: 30px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 5px;
+    }
+    h3 {
+      color: #4b5563;
+      margin-top: 20px;
+    }
+    strong {
+      color: #1f2937;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    li {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  ${htmlContent}
+</body>
+</html>
+  `
+
+  // 3. 使用 Puppeteer 生成 PDF
+  const browser = await puppeteer.default.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  })
+
+  const page = await browser.newPage()
+  await page.setContent(fullHtml, { waitUntil: 'networkidle0' })
+
+  const pdfBuffer = await page.pdf({
+    format: 'A4',
+    margin: {
+      top: '20px',
+      right: '20px',
+      bottom: '20px',
+      left: '20px'
+    },
+    printBackground: true
+  })
+
+  await browser.close()
+
+  return Buffer.from(pdfBuffer)
 }
 
 // 获取内容类型
@@ -652,6 +911,11 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
         }
         if (result.budgetEstimate) {
           designResultQueries.save(dbWorkflow.id, 'budget', JSON.stringify(result.budgetEstimate))
+        }
+        // 保存最终报告
+        if (result.finalReport) {
+          designResultQueries.save(dbWorkflow.id, 'report', result.finalReport)
+          logger.info('最终报告已保存到数据库（人工审核模式）', { workflowId: dbWorkflow.id })
         }
 
         // 更新项目和工作流状态

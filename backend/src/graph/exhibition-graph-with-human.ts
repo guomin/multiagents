@@ -505,6 +505,7 @@ export class ExhibitionDesignGraphWithHuman {
         return {
           ...state,
           currentStep: "项目完成",
+          finalReport,
           messages: [...state.messages, "最终报告已生成"]
         };
       } catch (error) {

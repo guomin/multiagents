@@ -427,8 +427,7 @@
             :loading="submitting"
             @click="submitForm"
           >
-            <ElIcon v-if="!submitting" style="margin-right: 4px"><VideoPlay /></ElIcon>
-            <ElIcon v-else style="margin-right: 4px" class="is-loading"><Loading /></ElIcon>
+            <ElIcon style="margin-right: 4px"><VideoPlay /></ElIcon>
             {{ submitting ? '启动中...' : '启动多智能体设计' }}
           </ElButton>
         </div>

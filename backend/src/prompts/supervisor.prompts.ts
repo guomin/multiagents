@@ -92,7 +92,7 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
 
 {{#if spatialLayout}}
 2. 空间设计：
-   - 布局：{{layout}}
+   - 布局：{{spatialLayoutDesc}}
    - 参观路线：{{visitorRoute}}
    - 功能区域：{{zones}}
 {{else}}❌ 空间设计未完成{{/if}}
@@ -155,7 +155,7 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
 {{/if}}
 
 {{#if spatialLayout}}
-- 空间布局：{{layout}}
+- 空间布局：{{spatialLayoutDesc}}
 - 参观路线：{{visitorRoute}}
 - 功能区域：{{zones}}
 {{/if}}

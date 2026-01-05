@@ -103,12 +103,21 @@ export const exhibitionAPI = {
     try {
       const response = await api.get(`/exhibition/export/${id}`, {
         params: { format },
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 120000 // 2分钟超时（PDF生成可能需要较长时间）
       })
       return response.data
-    } catch (error) {
-      console.error('Failed to export report:', error)
-      throw error
+    } catch (error: any) {
+      console.error('导出报告失败:', error)
+
+      // 提供更详细的错误信息
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('导出超时，请稍后重试')
+      } else if (error.response) {
+        throw new Error(`服务器错误: ${error.response.status}`)
+      } else {
+        throw error
+      }
     }
   },
 
