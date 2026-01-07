@@ -21,7 +21,12 @@ export class BudgetControllerAgent {
     this.logger.info('💰 初始化预算控制智能体', { modelName, temperature });
 
     try {
-      this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
+      // 使用智能体专属配置方法
+      this.modelConfig = ModelConfigFactory.createModelConfigForAgent(
+        'budget_controller',  // 指定智能体类型
+        modelName,
+        temperature
+      );
 
       this.logger.info('✅ 模型配置创建成功', {
         provider: this.modelConfig.provider,
