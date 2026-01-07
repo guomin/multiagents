@@ -12,15 +12,29 @@ export class SupervisorAgent {
 
   constructor(modelName?: string, temperature: number = 0.5) {
     this.logger.info('🛡️ 初始化监督智能体', { modelName, temperature });
-    this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
 
-    this.llm = new ChatOpenAI({
-      modelName: this.modelConfig.modelName,
-      temperature: this.modelConfig.temperature,
-      openAIApiKey: this.modelConfig.apiKey,
-      ...(this.modelConfig.baseURL && { configuration: { baseURL: this.modelConfig.baseURL } }),
-      ...(this.modelConfig.organization && { openAIOrganization: this.modelConfig.organization })
-    });
+    try {
+      this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
+
+      this.logger.info('✅ 模型配置创建成功', {
+        provider: this.modelConfig.provider,
+        modelName: this.modelConfig.modelName,
+        temperature: this.modelConfig.temperature
+      });
+
+      this.llm = new ChatOpenAI({
+        modelName: this.modelConfig.modelName,
+        temperature: this.modelConfig.temperature,
+        openAIApiKey: this.modelConfig.apiKey,
+        ...(this.modelConfig.baseURL && { configuration: { baseURL: this.modelConfig.baseURL } }),
+        ...(this.modelConfig.organization && { openAIOrganization: this.modelConfig.organization })
+      });
+
+      this.logger.info('✅ LLM客户端初始化完成');
+    } catch (error) {
+      this.logger.error('❌ 初始化失败', error as Error, { modelName, temperature });
+      throw error;
+    }
   }
 
   async analyzeProgress(state: ExhibitionState): Promise<{

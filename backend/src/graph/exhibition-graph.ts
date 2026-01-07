@@ -153,6 +153,7 @@ export class ExhibitionDesignGraph {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
           state.requirements,
           state.conceptPlan,
+          state.spatialLayout,
           state.revisionReason
         );
 
@@ -200,6 +201,7 @@ export class ExhibitionDesignGraph {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
           state.requirements,
           state.conceptPlan,
+          state.spatialLayout,
           state.revisionReason
         );
 
@@ -251,6 +253,7 @@ export class ExhibitionDesignGraph {
             const result = await this.visualDesigner.generateVisualDesign(
               state.requirements,
               conceptPlan,
+              state.spatialLayout,
               state.revisionReason
             );
             broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
@@ -263,6 +266,7 @@ export class ExhibitionDesignGraph {
             const result = await this.interactiveTech.generateInteractiveSolution(
               state.requirements,
               conceptPlan,
+              state.spatialLayout,
               state.revisionReason
             );
             broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });

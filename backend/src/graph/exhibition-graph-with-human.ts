@@ -119,6 +119,7 @@ export class ExhibitionDesignGraphWithHuman {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
           state.requirements,
           state.conceptPlan,
+          state.spatialLayout,
           state.revisionReason || state.humanFeedback // 传递修订原因或人工反馈
         );
 
@@ -156,6 +157,7 @@ export class ExhibitionDesignGraphWithHuman {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
           state.requirements,
           state.conceptPlan,
+          state.spatialLayout,
           state.revisionReason || state.humanFeedback // 传递修订原因或人工反馈
         );
 
@@ -202,6 +204,7 @@ export class ExhibitionDesignGraphWithHuman {
             const result = await this.visualDesigner.generateVisualDesign(
               state.requirements,
               conceptPlan,
+              state.spatialLayout,
               feedback
             );
             broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
@@ -216,6 +219,7 @@ export class ExhibitionDesignGraphWithHuman {
             const result = await this.interactiveTech.generateInteractiveSolution(
               state.requirements,
               conceptPlan,
+              state.spatialLayout,
               feedback
             );
             broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });

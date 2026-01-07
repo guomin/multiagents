@@ -19,6 +19,7 @@ const activeWorkflows = new Map<string, {
   chain: any
   state: any
   requirements: ExhibitionRequirement
+  dbProject: any   // 数据库项目记录
   dbWorkflow: any  // 数据库工作流记录
 }>()
 
@@ -278,12 +279,13 @@ async function runExhibitionAsync(
     if (state.waitingForHuman) {
       console.log('⏸️  [ASYNC] 人工审核模式：等待人工审核决策...')
 
-      // 保存工作流状态（包含 dbWorkflow）
+      // 保存工作流状态（包含 dbProject 和 dbWorkflow）
       activeWorkflows.set(projectId, {
         chain,
         state,
         requirements,
-        dbWorkflow  // 保存数据库工作流记录
+        dbProject,   // 保存数据库项目记录
+        dbWorkflow   // 保存数据库工作流记录
       })
 
       console.log('✅ [ASYNC] 工作流状态已保存，等待人工决策')
@@ -819,8 +821,9 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
     console.log('📋 [DECISION] 反馈:', feedback)
 
     // 解构工作流数据
-    const { chain, state, requirements, dbWorkflow } = workflowData
+    const { chain, state, requirements, dbProject, dbWorkflow } = workflowData
 
+    console.log('📋 [DECISION] dbProject:', dbProject ? '存在' : '不存在')
     console.log('📋 [DECISION] dbWorkflow:', dbWorkflow ? '存在' : '不存在')
 
     // 更新状态，添加人工决策
@@ -919,8 +922,7 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
         }
 
         // 更新项目和工作流状态
-        const projectIdNum = parseInt(projectId.split('_')[1])
-        projectQueries.updateStatus(String(projectIdNum), 'completed')
+        projectQueries.updateStatus(dbProject.id, 'completed')
         workflowQueries.complete(dbWorkflow.id)
 
         // 广播完成状态
@@ -941,6 +943,7 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
         chain,
         state: result,
         requirements,
+        dbProject,
         dbWorkflow
       })
 

@@ -61,7 +61,13 @@ export const InteractiveSolutionSchema = z.object({
     name: z.string(),
     description: z.string(),
     type: z.string(),
-    cost: z.number().optional()
+    cost: z.union([z.number(), z.string()]).optional().transform(val => {
+      if (typeof val === 'string') {
+        const num = parseFloat(val.replace(/[,，]/g, ''));
+        return isNaN(num) ? 0 : num;
+      }
+      return val;
+    })
   })).describe("互动装置"),
   technicalRequirements: z.string().describe("技术要求")
 });
@@ -71,10 +77,22 @@ export type InteractiveSolution = z.infer<typeof InteractiveSolutionSchema>;
 export const BudgetEstimateSchema = z.object({
   breakdown: z.array(z.object({
     category: z.string(),
-    amount: z.number(),
+    amount: z.union([z.number(), z.string()]).transform(val => {
+      if (typeof val === 'string') {
+        const num = parseFloat(val.replace(/[,，]/g, ''));
+        return isNaN(num) ? 0 : num;
+      }
+      return val;
+    }),
     description: z.string()
   })).describe("预算明细"),
-  totalCost: z.number().describe("总成本"),
+  totalCost: z.union([z.number(), z.string()]).transform(val => {
+    if (typeof val === 'string') {
+      const num = parseFloat(val.replace(/[,，]/g, ''));
+      return isNaN(num) ? 0 : num;
+    }
+    return val;
+  }).describe("总成本"),
   recommendations: z.array(z.string()).describe("优化建议")
 });
 

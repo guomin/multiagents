@@ -68,6 +68,12 @@ export const INTERACTIVE_TECH_PROMPTS: Record<string, PromptTemplate> = {
 - 核心概念：{{concept}}
 - 叙事结构：{{narrative}}
 
+【空间布局方案】
+- 整体布局：{{layout}}
+- 参观路线：{{visitorRoute}}
+- 功能区域：{{zones}}
+- 无障碍设计：{{accessibility}}
+
 {{#if researchContext}}
 【参考资料（来自真实展览案例）】
 {{researchContext}}

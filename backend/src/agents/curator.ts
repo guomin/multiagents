@@ -40,16 +40,38 @@ export class CuratorAgent {
 
   // 暂时移除装饰器，改为手动日志
   async generateConceptPlan(requirements: ExhibitionRequirement, revisionReason?: string): Promise<ConceptPlan> {
-    console.log('🎨 [策划智能体] 开始生成概念策划方案...')
-    const endTimer = this.logger.time('概念策划生成');
+    const startTime = Date.now();
+    console.log('🎨 [策划智能体] 开始生成概念策划方案...');
 
-    this.logger.info('开始生成概念策划', {
+    this.logger.info('═══════════════════════════════════════════════════════════');
+    this.logger.info('🎨 [策划智能体] 开始生成概念策划方案');
+    this.logger.info('═══════════════════════════════════════════════════════════');
+
+    // 📥 完整记录输入参数
+    this.logger.info('📥 [输入参数] 原始需求', {
       exhibitionTitle: requirements.title,
       theme: requirements.theme,
       targetAudience: requirements.targetAudience,
-      venueArea: requirements.venueSpace.area,
-      specialRequirements: requirements.specialRequirements,
-      hasRevisionReason: !!revisionReason
+      venueSpace: {
+        area: requirements.venueSpace.area,
+        height: requirements.venueSpace.height,
+        layout: requirements.venueSpace.layout
+      },
+      budget: {
+        total: requirements.budget.total,
+        currency: requirements.budget.currency
+      },
+      duration: {
+        startDate: requirements.duration.startDate,
+        endDate: requirements.duration.endDate
+      },
+      specialRequirements: requirements.specialRequirements || [],
+      hasRevisionReason: !!revisionReason,
+      revisionReason: revisionReason || "无"
+    });
+
+    this.logger.info('📥 [输入详情] 完整需求对象', {
+      fullRequirements: JSON.stringify(requirements, null, 2)
     });
 
     try {
@@ -71,55 +93,96 @@ export class CuratorAgent {
       const systemPrompt = rendered.system;
       const humanPrompt = rendered.human;
 
-      this.logger.debug('使用 PromptManager 渲染 prompt', {
+      this.logger.info('📝 [提示词] Prompt 版本', {
         version: `${rendered.version.major}.${rendered.version.minor}.${rendered.version.patch}`,
         systemPromptLength: systemPrompt.length,
         humanPromptLength: humanPrompt.length
       });
-      this.logger.debug('系统 Prompt 内容预览', { contentPreview: systemPrompt.substring(0, 500) });
-      this.logger.debug('用户 Prompt 内容预览', { contentPreview: humanPrompt.substring(0, 500) });
+
+      this.logger.info('📝 [提示词] 系统提示词', {
+        content: systemPrompt
+      });
+
+      this.logger.info('📝 [提示词] 用户提示词', {
+        content: humanPrompt
+      });
 
       const messages = [
         new SystemMessage(systemPrompt),
         new HumanMessage(humanPrompt)
       ];
 
-      this.logger.info('调用LLM生成概念策划', {
+      this.logger.info('🤖 [LLM调用] 准备调用大模型', {
         model: this.modelConfig.modelName,
         temperature: this.modelConfig.temperature,
-        messageCount: messages.length
+        messageCount: messages.length,
+        provider: this.modelConfig.provider
       });
 
       const llmStart = Date.now();
       const response = await this.llm.invoke(messages);
       const llmDuration = Date.now() - llmStart;
+      const totalDuration = Date.now() - startTime;
 
-      this.logger.info('LLM调用完成', {
+      this.logger.info('🤖 [LLM调用] 大模型响应完成', {
         responseLength: response.content.toString().length,
-        llmDuration,
+        llmDuration: `${llmDuration}ms`,
+        totalDuration: `${totalDuration}ms`,
         tokenUsage: response.usage_metadata
       });
 
       const rawContent = response.content.toString();
-      this.logger.debug('LLM原始响应', {
-        contentPreview: rawContent.substring(0, 500),
-        fullContentLength: rawContent.length
+
+      this.logger.info('📤 [LLM原始输出] 未解析的原始响应', {
+        content: rawContent,
+        length: rawContent.length
       });
 
       // 解析LLM响应 - 这里应该有更好的解析逻辑
       let conceptPlan: ConceptPlan;
 
+      this.logger.info('🔧 [解析开始] 开始解析LLM响应');
+
       try {
+        // 清理markdown代码块标记
+        let cleanedContent = rawContent.trim();
+
+        // 移除 ```json 和 ``` 标记
+        if (cleanedContent.startsWith('```json')) {
+          cleanedContent = cleanedContent.slice(7); // 移除 ```json
+        } else if (cleanedContent.startsWith('```')) {
+          cleanedContent = cleanedContent.slice(3); // 移除 ```
+        }
+
+        // 移除结尾的 ```
+        if (cleanedContent.endsWith('```')) {
+          cleanedContent = cleanedContent.slice(0, -3);
+        }
+
+        cleanedContent = cleanedContent.trim();
+
         // 尝试解析为JSON格式
-        if (rawContent.trim().startsWith('{')) {
-          const parsed = JSON.parse(rawContent);
+        if (cleanedContent.startsWith('{')) {
+          this.logger.info('🔧 [解析方式] 检测到JSON格式（已清理markdown标记），尝试JSON解析', {
+            originalLength: rawContent.length,
+            cleanedLength: cleanedContent.length,
+            hadMarkdownBlock: rawContent !== cleanedContent
+          });
+
+          const parsed = JSON.parse(cleanedContent);
           conceptPlan = {
             concept: parsed.concept || "基于展览主题的创新概念",
             narrative: parsed.narrative || "精心设计的叙事结构",
             keyExhibits: parsed.keyExhibits || ["主题展品", "互动展品", "艺术展品"],
             visitorFlow: parsed.visitorFlow || "优化的观众参观路线"
           };
+
+          this.logger.info('🔧 [解析成功] JSON解析完成', {
+            parsed: JSON.stringify(parsed, null, 2)
+          });
         } else {
+          this.logger.info('🔧 [解析方式] 非JSON格式，使用文本提取');
+
           // 简单的文本解析逻辑
           conceptPlan = {
             concept: this.extractConcept(rawContent),
@@ -129,27 +192,45 @@ export class CuratorAgent {
           };
         }
 
-        this.logger.info('概念策划解析完成', {
+        this.logger.info('📤 [最终输出] 概念策划方案', {
+          concept: conceptPlan.concept,
           conceptLength: conceptPlan.concept.length,
+          narrative: conceptPlan.narrative,
           narrativeLength: conceptPlan.narrative.length,
-          exhibitsCount: conceptPlan.keyExhibits.length
+          keyExhibits: conceptPlan.keyExhibits,
+          exhibitsCount: conceptPlan.keyExhibits.length,
+          visitorFlow: conceptPlan.visitorFlow,
+          visitorFlowLength: conceptPlan.visitorFlow.length
+        });
+
+        this.logger.info('📤 [输出详情] 完整概念策划对象', {
+          fullConceptPlan: JSON.stringify(conceptPlan, null, 2)
         });
 
       } catch (parseError) {
-        this.logger.warn('概念策划解析失败，使用默认结果', parseError as Error);
+        this.logger.error('❌ [解析失败] 解析失败，使用默认结果', parseError as Error);
         conceptPlan = {
           concept: rawContent.substring(0, 150) || "创新展览概念",
           narrative: "基于展览主题的深度叙事结构",
           keyExhibits: ["主题展品", "互动展品", "艺术展品"],
           visitorFlow: "线性参观动线，确保最佳观展体验"
         };
+
+        this.logger.warn('⚠️ [降级方案] 使用默认概念策划', {
+          fallbackResult: JSON.stringify(conceptPlan, null, 2)
+        });
       }
 
-      endTimer();
-      this.logger.info('概念策划生成完成', {
+      const finalDuration = Date.now() - startTime;
+
+      this.logger.info('═══════════════════════════════════════════════════════════');
+      this.logger.info('✅ [策划智能体] 概念策划生成完成', {
         success: true,
-        totalDuration: Date.now() - (Date.now() - llmDuration)
+        totalDuration: `${finalDuration}ms`,
+        llmDuration: `${llmDuration}ms`,
+        parsingDuration: `${finalDuration - llmDuration}ms`
       });
+      this.logger.info('═══════════════════════════════════════════════════════════');
 
       return conceptPlan;
 
