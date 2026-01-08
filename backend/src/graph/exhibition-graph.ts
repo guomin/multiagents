@@ -153,6 +153,7 @@ export class ExhibitionDesignGraph {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
           state.requirements,
           state.conceptPlan,
+          state.spatialLayout,
           state.revisionReason
         );
 
@@ -200,6 +201,7 @@ export class ExhibitionDesignGraph {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
           state.requirements,
           state.conceptPlan,
+          state.spatialLayout,
           state.revisionReason
         );
 
@@ -251,6 +253,7 @@ export class ExhibitionDesignGraph {
             const result = await this.visualDesigner.generateVisualDesign(
               state.requirements,
               conceptPlan,
+              state.spatialLayout,
               state.revisionReason
             );
             broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
@@ -263,6 +266,7 @@ export class ExhibitionDesignGraph {
             const result = await this.interactiveTech.generateInteractiveSolution(
               state.requirements,
               conceptPlan,
+              state.spatialLayout,
               state.revisionReason
             );
             broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });
@@ -440,6 +444,7 @@ export class ExhibitionDesignGraph {
         return {
           ...state,
           currentStep: "项目完成",
+          finalReport,
           messages: [...state.messages, "最终报告已生成"]
         };
       } catch (error) {
@@ -641,7 +646,8 @@ export class ExhibitionDesignGraph {
       maxIterations,
       feedbackHistory: [],
       needsRevision: false,
-      waitingForHuman: false
+      waitingForHuman: false,
+      autoApprove: true  // 默认自动批准模式
     };
 
     logger.info("🚀 启动展陈设计多智能体系统（支持迭代优化）", {

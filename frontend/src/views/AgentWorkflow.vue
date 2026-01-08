@@ -383,6 +383,13 @@ const agentGroups = ref<AgentGroup[]>([
     type: 'single',
     status: 'pending'
   },
+  // ⭐ 新增：大纲细化智能体
+  {
+    id: 'outline',
+    name: '大纲细化智能体',
+    type: 'single',
+    status: 'pending'
+  },
   {
     id: 'spatial',
     name: '空间设计智能体',
@@ -483,6 +490,7 @@ const getRevisionTargetLabel = (target: string | null) => {
   if (!target) return ''
   const labels: Record<string, string> = {
     'curator': '策划概念',
+    'outline': '大纲细化',  // ⭐ 新增
     'spatial_designer': '空间设计',
     'parallel_designs': '视觉设计 + 互动技术（并行）',
     'visual_designer': '视觉设计',

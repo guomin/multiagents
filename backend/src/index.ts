@@ -3,6 +3,7 @@ import cors from 'cors'
 import { WebSocketServer } from 'ws'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
+import path from 'path'
 import { exhibitionAPI } from './routes/exhibition'
 import { logsAPI } from './routes/logs'
 import { projectsAPI } from './routes/projects'
@@ -14,10 +15,45 @@ import { createLogger } from './utils/logger'
 // import { agentLogger } from './utils/agent-logger'
 import { performanceMonitor } from './utils/performance-monitor'
 import { initializeDatabase } from './database/schema'
+import { initializePrompts } from './prompts'
 
-// 加载环境变量
+// 加载环境变量 - 优先从 backend 目录加载 .env 文件
+// .env 文件中的变量会覆盖系统环境变量
 if (process.env.NODE_ENV !== "production") {
-  dotenv.config()
+  // 尝试从多个可能的路径加载 .env 文件
+  const envPath = path.resolve(process.cwd(), '.env')
+  const envResult = dotenv.config({
+    path: envPath,
+    override: true  // 让 .env 文件覆盖系统环境变量
+  })
+
+  if (envResult.error) {
+    // 如果从 process.cwd() 加载失败，尝试从 __dirname 加载
+    const fallbackPath = path.resolve(__dirname, '../.env')
+    const fallbackResult = dotenv.config({
+      path: fallbackPath,
+      override: true
+    })
+
+    if (fallbackResult.error) {
+      console.warn('⚠️  警告: 无法加载 .env 文件')
+      console.warn('   尝试的路径:', envPath, fallbackPath)
+    } else {
+      console.log('✅ 从备用路径加载 .env 文件:', fallbackPath)
+      console.log('ℹ️  .env 文件中的变量将覆盖系统环境变量')
+    }
+  } else {
+    console.log('✅ 从默认路径加载 .env 文件:', envPath)
+    console.log('ℹ️  .env 文件中的变量将覆盖系统环境变量')
+  }
+
+  // 验证关键环境变量
+  if (process.env.ZHIPUAI_API_KEY) {
+    console.log('✅ ZHIPUAI_API_KEY 已加载 (前10位):', process.env.ZHIPUAI_API_KEY.substring(0, 10) + '...')
+    console.log('ℹ️  来源: .env 文件 (已覆盖系统环境变量)')
+  } else {
+    console.warn('⚠️  警告: ZHIPUAI_API_KEY 未找到')
+  }
 }
 
 const app = express()
@@ -26,6 +62,9 @@ const PORT = process.env.PORT || 3001
 
 // 创建主日志记录器
 const mainLogger = createLogger('MAIN')
+
+// 初始化 Prompt 模板
+initializePrompts()
 
 mainLogger.info('🚀 启动多智能体展陈设计系统', {
   nodeEnv: process.env.NODE_ENV || 'development',

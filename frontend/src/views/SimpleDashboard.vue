@@ -65,15 +65,29 @@
         </div>
       </div>
 
-      <div class="stat-card stat-purple">
+      <div class="stat-card stat-gray">
         <div class="stat-icon">
-          <ElIcon :size="28"><Monitor /></ElIcon>
+          <ElIcon :size="28"><Clock /></ElIcon>
         </div>
         <div class="stat-content">
-          <p class="stat-label">智能体</p>
-          <p class="stat-value">{{ stats.agents }}</p>
+          <p class="stat-label">待处理</p>
+          <p class="stat-value">{{ stats.pending }}</p>
         </div>
-        <div class="stat-badge">全部在线</div>
+        <div class="stat-trend neutral">
+          <ElIcon><Minus /></ElIcon>
+          <span>-</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-red">
+        <div class="stat-icon">
+          <ElIcon :size="28"><Warning /></ElIcon>
+        </div>
+        <div class="stat-content">
+          <p class="stat-label">错误</p>
+          <p class="stat-value">{{ stats.error }}</p>
+        </div>
+        <div class="stat-badge" v-if="stats.error > 0">需处理</div>
       </div>
     </div>
 
@@ -115,34 +129,6 @@
 
     <!-- 主内容区 -->
     <div class="main-content">
-      <!-- 智能体状态 -->
-      <div class="panel agents-panel">
-        <div class="panel-header">
-          <h3 class="panel-title">
-            <ElIcon class="icon"><Monitor /></ElIcon>
-            智能体状态
-          </h3>
-          <ElTag type="success" size="small">运行正常</ElTag>
-        </div>
-        <div class="agents-grid">
-          <div
-            v-for="agent in agents"
-            :key="agent.id"
-            class="agent-card"
-            :class="`agent-${agent.status}`"
-          >
-            <div class="agent-status-dot" :class="`dot-${agent.status}`"></div>
-            <div class="agent-info">
-              <h4 class="agent-name">{{ agent.name }}</h4>
-              <p class="agent-role">{{ getAgentTypeLabel(agent.type) }}</p>
-            </div>
-            <div class="agent-icon">
-              {{ getAgentStatusIcon(agent.status) }}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- 最近项目 -->
       <div class="panel projects-panel">
         <div class="panel-header">
@@ -156,7 +142,19 @@
           </ElButton>
         </div>
         <div class="projects-list">
+          <div v-if="projectsLoading" class="loading-state">
+            <ElIcon class="is-loading" :size="32"><Loading /></ElIcon>
+            <p>加载中...</p>
+          </div>
+          <div v-else-if="recentProjects.length === 0" class="empty-state">
+            <ElIcon :size="48"><FolderOpened /></ElIcon>
+            <p>暂无项目</p>
+            <ElButton type="primary" @click="createNewExhibition">
+              创建第一个项目
+            </ElButton>
+          </div>
           <div
+            v-else
             v-for="project in recentProjects"
             :key="project.id"
             class="project-card"
@@ -202,13 +200,14 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExhibitionStore } from '@/stores/exhibition'
+import { exhibitionAPI } from '@/api/exhibition'
+import { ElMessage } from 'element-plus'
 import {
   OfficeBuilding,
   Plus,
   Folder,
   CircleCheck,
   Loading,
-  Monitor,
   TrendCharts,
   Minus,
   ArrowRight,
@@ -216,60 +215,27 @@ import {
   Files,
   FolderOpened,
   Calendar,
-  Coin
+  Coin,
+  Clock,
+  Warning
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const exhibitionStore = useExhibitionStore()
 
 const stats = ref({
-  total: 12,
-  completed: 8,
-  running: 3,
+  total: 0,
+  completed: 0,
+  running: 0,
+  pending: 0,
+  error: 0,
   agents: 6
 })
 
-const agents = [
-  { id: 'curator', name: '策划智能体', type: 'curator', status: 'completed' },
-  { id: 'spatial', name: '空间设计智能体', type: 'spatial', status: 'completed' },
-  { id: 'visual', name: '视觉设计智能体', type: 'visual', status: 'running' },
-  { id: 'interactive', name: '互动技术智能体', type: 'interactive', status: 'pending' },
-  { id: 'budget', name: '预算控制智能体', type: 'budget', status: 'pending' },
-  { id: 'supervisor', name: '协调主管智能体', type: 'supervisor', status: 'pending' }
-]
+const statsLoading = ref(false)
 
-const recentProjects = [
-  {
-    id: '1',
-    title: '数字艺术的未来',
-    theme: '探索人工智能与数字艺术的融合创新',
-    status: 'completed',
-    progress: 100,
-    createdAt: '2024-12-15',
-    budget: '500,000',
-    currency: 'CNY'
-  },
-  {
-    id: '2',
-    title: '科技与生活',
-    theme: '展示现代科技如何改变日常生活',
-    status: 'completed',
-    progress: 100,
-    createdAt: '2024-12-10',
-    budget: '200,000',
-    currency: 'CNY'
-  },
-  {
-    id: '3',
-    title: 'AI艺术创作展',
-    theme: '人工智能赋能艺术创作的新时代',
-    status: 'running',
-    progress: 60,
-    createdAt: '2024-12-18',
-    budget: '300,000',
-    currency: 'CNY'
-  }
-]
+const recentProjects = ref<any[]>([])
+const projectsLoading = ref(false)
 
 const createNewExhibition = () => {
   router.push('/create')
@@ -291,30 +257,61 @@ const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('zh-CN')
 }
 
-const getAgentTypeLabel = (type: string) => {
-  const labels = {
-    curator: '概念策划',
-    spatial: '空间设计',
-    visual: '视觉设计',
-    interactive: '互动技术',
-    budget: '预算控制',
-    supervisor: '协调主管'
-  }
-  return labels[type as keyof typeof labels] || type
+// 格式化预算显示
+const formatBudget = (budget: number, currency: string) => {
+  return budget.toLocaleString()
 }
 
-const getAgentStatusIcon = (status: string) => {
-  const icons = {
-    pending: '⏸️',
-    running: '🔄',
-    completed: '✅',
-    error: '❌'
+// 加载最近项目
+const loadRecentProjects = async () => {
+  projectsLoading.value = true
+  try {
+    const data = await exhibitionAPI.getProjects(3, 0)
+    recentProjects.value = data.map(project => ({
+      id: project.id,
+      title: project.title,
+      theme: project.theme,
+      status: project.status,
+      progress: project.status === 'completed' ? 100 : project.status === 'running' ? 60 : 0,
+      createdAt: project.created_at,
+      budget: formatBudget(project.budget_total, project.budget_currency),
+      currency: project.budget_currency
+    }))
+  } catch (error) {
+    console.error('加载最近项目失败:', error)
+    ElMessage.error('加载最近项目失败')
+  } finally {
+    projectsLoading.value = false
   }
-  return icons[status as keyof typeof icons] || '⏸️'
 }
 
-onMounted(() => {
+// 加载统计数据
+const loadStats = async () => {
+  statsLoading.value = true
+  try {
+    const data = await exhibitionAPI.getProjectStats()
+    stats.value = {
+      total: data.total,
+      completed: data.completed,
+      running: data.running,
+      pending: data.pending,
+      error: data.error,
+      agents: 6
+    }
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+    ElMessage.error('加载统计数据失败')
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+onMounted(async () => {
   exhibitionStore.initializeApp()
+  await Promise.all([
+    loadStats(),
+    loadRecentProjects()
+  ])
 })
 </script>
 
@@ -397,6 +394,7 @@ onMounted(() => {
 .stat-card:nth-child(2) { animation-delay: 0.2s; }
 .stat-card:nth-child(3) { animation-delay: 0.3s; }
 .stat-card:nth-child(4) { animation-delay: 0.4s; }
+.stat-card:nth-child(5) { animation-delay: 0.5s; }
 
 .stat-card:hover {
   transform: translateY(-4px);
@@ -431,6 +429,16 @@ onMounted(() => {
 .stat-purple .stat-icon {
   background: linear-gradient(135deg, #e9d5ff 0%, #d8b4fe 100%);
   color: #9333ea;
+}
+
+.stat-gray .stat-icon {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  color: #6b7280;
+}
+
+.stat-red .stat-icon {
+  background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+  color: #dc2626;
 }
 
 .stat-content {
@@ -474,6 +482,10 @@ onMounted(() => {
   border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
+}
+
+.stat-red .stat-badge {
+  background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%);
 }
 
 /* 快速操作 */
@@ -556,16 +568,7 @@ onMounted(() => {
 
 /* 主内容区 */
 .main-content {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 24px;
   animation: fadeIn 0.5s ease-out 0.6s both;
-}
-
-@media (max-width: 1024px) {
-  .main-content {
-    grid-template-columns: 1fr;
-  }
 }
 
 .panel {
@@ -595,76 +598,6 @@ onMounted(() => {
 
 .panel-title .icon {
   color: #3b82f6;
-}
-
-/* 智能体网格 */
-.agents-grid {
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-}
-
-.agent-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 10px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  transition: all 0.3s ease;
-}
-
-.agent-card:hover {
-  background: #f3f4f6;
-  transform: translateX(4px);
-}
-
-.agent-status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dot-pending {
-  background: #d1d5db;
-}
-
-.dot-running {
-  background: #3b82f6;
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.dot-completed {
-  background: #10b981;
-}
-
-.dot-error {
-  background: #ef4444;
-}
-
-.agent-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.agent-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0 0 2px 0;
-}
-
-.agent-role {
-  font-size: 12px;
-  color: #6b7280;
-  margin: 0;
-}
-
-.agent-icon {
-  font-size: 20px;
-  flex-shrink: 0;
 }
 
 /* 项目列表 */
@@ -744,6 +677,32 @@ onMounted(() => {
   text-align: right;
 }
 
+/* 加载和空状态 */
+.loading-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  color: #9ca3af;
+}
+
+.loading-state p,
+.empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.empty-state {
+  color: #6b7280;
+}
+
+.empty-state .el-icon {
+  color: #d1d5db;
+}
+
 /* 动画 */
 @keyframes slideInDown {
   from {
@@ -773,15 +732,6 @@ onMounted(() => {
   }
   to {
     opacity: 1;
-  }
-}
-
-@keyframes pulse-dot {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
   }
 }
 </style>

@@ -1,199 +1,226 @@
 <template>
-  <div class="container mx-auto px-4 py-8">
+  <div class="results-page">
     <!-- 加载状态 -->
-    <div v-if="loading" class="text-center py-12">
-      <ElIcon class="text-6xl text-blue-500 animate-spin mb-4"><Loading /></ElIcon>
-      <p class="text-gray-600 text-lg">正在加载项目数据...</p>
+    <div v-if="loading" class="loading-state">
+      <ElIcon class="is-loading"><Loading /></ElIcon>
+      <p>正在加载项目数据...</p>
     </div>
 
     <!-- 页面内容 -->
     <div v-else-if="currentWorkflow">
-    <!-- 页面标题 -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-      <div class="flex justify-between items-center">
-        <div>
-          <h1 class="text-3xl font-bold text-gray-800 flex items-center">
-            <ElIcon class="mr-3 text-green-600"><SuccessFilled /></ElIcon>
-            展陈设计方案
-          </h1>
-          <p class="text-gray-600 mt-2">{{ currentWorkflow?.requirements.title }}</p>
-        </div>
-        <div class="flex items-center space-x-4">
-          <ElButton @click="exportReport('pdf')" :icon="Download">
-            导出 PDF
-          </ElButton>
-          <ElButton @click="exportReport('markdown')" :icon="Document">
-            导出 Markdown
-          </ElButton>
-          <ElButton type="primary" @click="createNewProject" :icon="Plus">
-            新建项目
-          </ElButton>
-        </div>
-      </div>
-    </div>
-
-    <!-- 项目概览 -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-      <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
-        <ElIcon class="mr-2 text-blue-600"><DataAnalysis /></ElIcon>
-        项目概览
-      </h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-blue-600">{{ currentWorkflow?.requirements.budget.total.toLocaleString() }}</div>
-          <div class="text-sm text-gray-600 mt-1">总预算 ({{ currentWorkflow?.requirements.budget.currency }})</div>
-        </div>
-        <div class="text-center">
-          <div class="text-3xl font-bold text-green-600">{{ currentWorkflow?.requirements.venueSpace.area }}</div>
-          <div class="text-sm text-gray-600 mt-1">场地面积 (㎡)</div>
-        </div>
-        <div class="text-center">
-          <div class="text-3xl font-bold text-purple-600">{{ projectDuration }}</div>
-          <div class="text-sm text-gray-600 mt-1">展期天数</div>
-        </div>
-        <div class="text-center">
-          <div class="text-3xl font-bold text-orange-600">{{ completedAgents }}</div>
-          <div class="text-sm text-gray-600 mt-1">完成步骤</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 设计方案展示 -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-      <!-- 概念策划 -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-          <div class="w-4 h-4 bg-agent-curator rounded-full mr-2"></div>
-          概念策划
-        </h3>
-        <div v-if="currentWorkflow?.conceptPlan" class="space-y-4">
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">核心概念</h4>
-            <p class="text-gray-600">{{ currentWorkflow.conceptPlan.concept }}</p>
-          </div>
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">叙事结构</h4>
-            <p class="text-gray-600">{{ currentWorkflow.conceptPlan.narrative }}</p>
-          </div>
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">重点展品</h4>
-            <div class="flex flex-wrap gap-2">
-              <ElTag
-                v-for="exhibit in currentWorkflow.conceptPlan.keyExhibits"
-                :key="exhibit"
-                type="info"
-                size="small"
-              >
-                {{ exhibit }}
-              </ElTag>
+      <!-- 页面头部 -->
+      <div class="page-header">
+        <div class="header-content">
+          <div class="title-section">
+            <ElButton @click="goBack" :icon="ArrowLeft" circle text class="back-button" />
+            <div>
+              <h1 class="page-title">
+                <ElIcon><SuccessFilled /></ElIcon>
+                展陈设计方案
+              </h1>
+              <p class="page-subtitle">{{ currentWorkflow?.requirements.title }}</p>
             </div>
           </div>
+          <div class="action-buttons">
+            <ElButton @click="exportReport('markdown')" :icon="Document">
+              导出 Markdown
+            </ElButton>
+            <ElButton @click="exportReport('pdf')" :icon="Download">
+              导出 PDF
+            </ElButton>
+            <ElButton type="primary" @click="createNewProject" :icon="Plus">
+              新建项目
+            </ElButton>
+          </div>
         </div>
       </div>
 
-      <!-- 空间设计 -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-          <div class="w-4 h-4 bg-agent-spatial rounded-full mr-2"></div>
-          空间设计
-        </h3>
-        <div v-if="currentWorkflow?.spatialLayout" class="space-y-4">
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">布局方案</h4>
-            <p class="text-gray-600">{{ currentWorkflow.spatialLayout.layout }}</p>
+      <!-- 项目概览卡片 -->
+      <div class="overview-section">
+        <div class="stat-card stat-budget">
+          <div class="stat-icon">
+            <ElIcon><Wallet /></ElIcon>
           </div>
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">功能区域</h4>
-            <div class="space-y-2">
-              <div
-                v-for="zone in currentWorkflow.spatialLayout.zones"
-                :key="zone.name"
-                class="flex justify-between items-center p-2 bg-gray-50 rounded"
-              >
-                <span class="font-medium">{{ zone.name }}</span>
-                <span class="text-sm text-gray-600">{{ zone.area }}㎡ - {{ zone.function }}</span>
+          <div class="stat-content">
+            <div class="stat-value">{{ currentWorkflow?.requirements.budget.total.toLocaleString() }}</div>
+            <div class="stat-label">总预算 ({{ currentWorkflow?.requirements.budget.currency }})</div>
+          </div>
+        </div>
+        <div class="stat-card stat-area">
+          <div class="stat-icon">
+            <ElIcon><OfficeBuilding /></ElIcon>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ currentWorkflow?.requirements.venueSpace.area }}</div>
+            <div class="stat-label">场地面积 (㎡)</div>
+          </div>
+        </div>
+        <div class="stat-card stat-duration">
+          <div class="stat-icon">
+            <ElIcon><Calendar /></ElIcon>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ projectDuration }}</div>
+            <div class="stat-label">展期天数</div>
+          </div>
+        </div>
+        <div class="stat-card stat-completed">
+          <div class="stat-icon">
+            <ElIcon><CircleCheck /></ElIcon>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ completedAgents }}</div>
+            <div class="stat-label">完成步骤</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设计方案展示 -->
+      <div class="design-grid">
+        <!-- 概念策划 -->
+        <div class="design-card card-concept">
+          <div class="card-header">
+            <div class="header-icon">
+              <ElIcon><Star /></ElIcon>
+            </div>
+            <h3 class="card-title">概念策划</h3>
+          </div>
+          <div v-if="currentWorkflow?.conceptPlan" class="card-body">
+            <div class="info-section">
+              <h4 class="section-title">核心概念</h4>
+              <p class="section-content">{{ currentWorkflow.conceptPlan.concept }}</p>
+            </div>
+            <div class="info-section">
+              <h4 class="section-title">叙事结构</h4>
+              <p class="section-content">{{ currentWorkflow.conceptPlan.narrative }}</p>
+            </div>
+            <div class="info-section">
+              <h4 class="section-title">重点展品</h4>
+              <div class="tag-list">
+                <ElTag
+                  v-for="exhibit in currentWorkflow.conceptPlan.keyExhibits"
+                  :key="exhibit"
+                  type="info"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ exhibit }}
+                </ElTag>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 视觉设计 -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-          <div class="w-4 h-4 bg-agent-visual rounded-full mr-2"></div>
-          视觉设计
-        </h3>
-        <div v-if="currentWorkflow?.visualDesign" class="space-y-4">
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">色彩方案</h4>
-            <div class="flex space-x-2">
-              <div
-                v-for="color in currentWorkflow.visualDesign.colorScheme"
-                :key="color"
-                class="w-12 h-12 rounded-lg border-2 border-gray-200"
-                :style="{ backgroundColor: color }"
-                :title="color"
-              ></div>
+        <!-- 空间设计 -->
+        <div class="design-card card-spatial">
+          <div class="card-header">
+            <div class="header-icon">
+              <ElIcon><Menu /></ElIcon>
             </div>
+            <h3 class="card-title">空间设计</h3>
           </div>
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">字体设计</h4>
-            <p class="text-gray-600">{{ currentWorkflow.visualDesign.typography }}</p>
-          </div>
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">品牌元素</h4>
-            <div class="flex flex-wrap gap-2">
-              <ElTag
-                v-for="element in currentWorkflow.visualDesign.brandElements"
-                :key="element"
-                type="primary"
-                size="small"
-              >
-                {{ element }}
-              </ElTag>
+          <div v-if="currentWorkflow?.spatialLayout" class="card-body">
+            <div class="info-section">
+              <h4 class="section-title">布局方案</h4>
+              <p class="section-content">{{ currentWorkflow.spatialLayout.layout }}</p>
+            </div>
+            <div class="info-section">
+              <h4 class="section-title">功能区域</h4>
+              <div class="zone-list">
+                <div
+                  v-for="zone in currentWorkflow.spatialLayout.zones"
+                  :key="zone.name"
+                  class="zone-item"
+                >
+                  <span class="zone-name">{{ zone.name }}</span>
+                  <span class="zone-info">{{ zone.area }}㎡ · {{ zone.function }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 互动技术 -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-          <div class="w-4 h-4 bg-agent-interactive rounded-full mr-2"></div>
-          互动技术
-        </h3>
-        <div v-if="currentWorkflow?.interactiveSolution" class="space-y-4">
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">使用技术</h4>
-            <div class="flex flex-wrap gap-2">
-              <ElTag
-                v-for="tech in currentWorkflow.interactiveSolution.technologies"
-                :key="tech"
-                type="success"
-                size="small"
-              >
-                {{ tech }}
-              </ElTag>
+        <!-- 视觉设计 -->
+        <div class="design-card card-visual">
+          <div class="card-header">
+            <div class="header-icon">
+              <ElIcon><EditPen /></ElIcon>
+            </div>
+            <h3 class="card-title">视觉设计</h3>
+          </div>
+          <div v-if="currentWorkflow?.visualDesign" class="card-body">
+            <div class="info-section">
+              <h4 class="section-title">色彩方案</h4>
+              <div class="color-palette">
+                <div
+                  v-for="color in currentWorkflow.visualDesign.colorScheme"
+                  :key="color"
+                  class="color-swatch"
+                  :style="{ backgroundColor: color }"
+                  :title="color"
+                ></div>
+              </div>
+            </div>
+            <div class="info-section">
+              <h4 class="section-title">字体设计</h4>
+              <p class="section-content">{{ currentWorkflow.visualDesign.typography }}</p>
+            </div>
+            <div class="info-section">
+              <h4 class="section-title">品牌元素</h4>
+              <div class="tag-list">
+                <ElTag
+                  v-for="element in currentWorkflow.visualDesign.brandElements"
+                  :key="element"
+                  type="primary"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ element }}
+                </ElTag>
+              </div>
             </div>
           </div>
-          <div>
-            <h4 class="font-semibold text-gray-700 mb-2">互动装置</h4>
-            <div class="space-y-2">
-              <div
-                v-for="interactive in currentWorkflow.interactiveSolution.interactives"
-                :key="interactive.name"
-                class="p-3 bg-blue-50 rounded-lg"
-              >
-                <div class="flex justify-between items-start">
-                  <div class="flex-1">
-                    <div class="font-medium text-gray-800">{{ interactive.name }}</div>
-                    <div class="text-sm text-gray-600 mt-1">{{ interactive.description }}</div>
-                    <ElTag type="info" size="small" class="mt-2">{{ interactive.type }}</ElTag>
+        </div>
+
+        <!-- 互动技术 -->
+        <div class="design-card card-interactive">
+          <div class="card-header">
+            <div class="header-icon">
+              <ElIcon><Link /></ElIcon>
+            </div>
+            <h3 class="card-title">互动技术</h3>
+          </div>
+          <div v-if="currentWorkflow?.interactiveSolution" class="card-body">
+            <div class="info-section">
+              <h4 class="section-title">使用技术</h4>
+              <div class="tag-list">
+                <ElTag
+                  v-for="tech in currentWorkflow.interactiveSolution.technologies"
+                  :key="tech"
+                  type="success"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ tech }}
+                </ElTag>
+              </div>
+            </div>
+            <div class="info-section">
+              <h4 class="section-title">互动装置</h4>
+              <div class="interactive-list">
+                <div
+                  v-for="interactive in currentWorkflow.interactiveSolution.interactives"
+                  :key="interactive.name"
+                  class="interactive-item"
+                >
+                  <div class="interactive-info">
+                    <div class="interactive-name">{{ interactive.name }}</div>
+                    <div class="interactive-desc">{{ interactive.description }}</div>
+                    <ElTag type="info" size="small" effect="plain" class="mt-2">{{ interactive.type }}</ElTag>
                   </div>
-                  <div v-if="interactive.cost" class="text-right ml-4">
-                    <div class="text-sm text-gray-500">成本</div>
-                    <div class="font-medium text-green-600">¥{{ interactive.cost.toLocaleString() }}</div>
+                  <div v-if="interactive.cost" class="interactive-cost">
+                    <div class="cost-label">成本</div>
+                    <div class="cost-value">¥{{ interactive.cost.toLocaleString() }}</div>
                   </div>
                 </div>
               </div>
@@ -201,93 +228,96 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 预算估算 -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-      <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-        <div class="w-4 h-4 bg-agent-budget rounded-full mr-2"></div>
-        预算估算
-      </h3>
-      <div v-if="currentWorkflow?.budgetEstimate" class="space-y-4">
-        <div>
-          <div class="flex justify-between items-center mb-2">
-            <h4 class="font-semibold text-gray-700">预算明细</h4>
-            <span class="text-lg font-bold text-green-600">
-              总计: ¥{{ currentWorkflow.budgetEstimate.totalCost.toLocaleString() }}
-            </span>
+      <!-- 预算估算 -->
+      <div class="budget-section">
+        <div class="section-header">
+          <div class="section-title-wrapper">
+            <div class="section-icon">
+              <ElIcon><Wallet /></ElIcon>
+            </div>
+            <h3 class="section-title">预算估算</h3>
           </div>
-          <div class="space-y-2">
+          <div v-if="currentWorkflow?.budgetEstimate" class="budget-total">
+            总计: ¥{{ currentWorkflow.budgetEstimate.totalCost.toLocaleString() }}
+          </div>
+        </div>
+
+        <div v-if="currentWorkflow?.budgetEstimate" class="budget-content">
+          <div class="budget-breakdown">
             <div
               v-for="item in currentWorkflow.budgetEstimate.breakdown"
               :key="item.category"
-              class="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
+              class="budget-item"
             >
-              <div>
-                <div class="font-medium text-gray-800">{{ item.category }}</div>
-                <div class="text-sm text-gray-600">{{ item.description }}</div>
+              <div class="budget-item-info">
+                <div class="budget-category">{{ item.category }}</div>
+                <div class="budget-desc">{{ item.description }}</div>
               </div>
-              <span class="font-semibold text-gray-900">¥{{ item.amount.toLocaleString() }}</span>
+              <div class="budget-amount">¥{{ item.amount.toLocaleString() }}</div>
+            </div>
+          </div>
+
+          <!-- 预算分布图表 -->
+          <div class="budget-chart">
+            <h4 class="chart-title">预算分布</h4>
+            <div class="chart-container">
+              <v-chart :option="budgetChartOption" class="w-full h-full" />
+            </div>
+          </div>
+
+          <!-- 优化建议 -->
+          <div v-if="currentWorkflow.budgetEstimate.recommendations?.length" class="recommendations">
+            <h4 class="recommendations-title">优化建议</h4>
+            <div class="recommendation-list">
+              <div
+                v-for="recommendation in currentWorkflow.budgetEstimate.recommendations"
+                :key="recommendation"
+                class="recommendation-item"
+              >
+                <ElIcon class="recommendation-icon"><Warning /></ElIcon>
+                <span>{{ recommendation }}</span>
+              </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- 预算分布图表 -->
-        <div>
-          <h4 class="font-semibold text-gray-700 mb-3">预算分布</h4>
-          <div class="h-64">
-            <v-chart
-              :option="budgetChartOption"
-              class="w-full h-full"
-            />
+      <!-- 智能体工作回顾 -->
+      <div class="agents-section">
+        <div class="section-header">
+          <div class="section-title-wrapper">
+            <div class="section-icon">
+              <ElIcon><Timer /></ElIcon>
+            </div>
+            <h3 class="section-title">智能体工作回顾</h3>
           </div>
         </div>
-
-        <div>
-          <h4 class="font-semibold text-gray-700 mb-2">优化建议</h4>
-          <div class="space-y-2">
-            <div
-              v-for="recommendation in currentWorkflow.budgetEstimate.recommendations"
-              :key="recommendation"
-              class="flex items-start p-3 bg-yellow-50 rounded-lg"
-            >
-              <ElIcon class="text-yellow-600 mr-2 mt-0.5"><Warning /></ElIcon>
-              <span class="text-gray-700">{{ recommendation }}</span>
+        <div class="agents-grid">
+          <div
+            v-for="agent in agentStatuses"
+            :key="agent.id"
+            class="agent-card"
+            :class="`agent-${agent.status}`"
+          >
+            <div class="agent-status-dot" :class="`dot-${agent.status}`"></div>
+            <div class="agent-name">{{ agent.name }}</div>
+            <div v-if="agent.startTime" class="agent-duration">
+              耗时: {{ calculateDuration(agent.startTime, agent.endTime) }}
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 智能体工作回顾 -->
-    <div class="bg-white rounded-lg shadow-md p-6">
-      <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-        <ElIcon class="mr-2 text-purple-600"><Timer /></ElIcon>
-        智能体工作回顾
-      </h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div
-          v-for="agent in agentStatuses"
-          :key="agent.id"
-          class="border rounded-lg p-4"
-          :class="getAgentReviewClass(agent.status)"
-        >
-          <div class="flex items-center mb-2">
-            <div class="w-3 h-3 rounded-full mr-2" :class="getAgentStatusDotClass(agent.status)"></div>
-            <span class="font-medium">{{ agent.name }}</span>
-          </div>
-          <div v-if="agent.startTime" class="text-xs text-gray-500">
-            耗时: {{ calculateDuration(agent.startTime, agent.endTime) }}
-          </div>
-        </div>
-      </div>
-    </div>
-    </div>
     <!-- 无数据提示 -->
-    <div v-else class="text-center py-12">
-      <ElIcon class="text-6xl text-gray-300 mb-4"><Warning /></ElIcon>
-      <p class="text-gray-600 text-lg">未找到项目数据</p>
-      <ElButton type="primary" @click="router.push('/')" class="mt-4">返回首页</ElButton>
+    <div v-else class="empty-state">
+      <ElIcon class="empty-icon"><Warning /></ElIcon>
+      <h3>未找到项目数据</h3>
+      <p>该项目可能不存在或已被删除</p>
+      <ElButton type="primary" @click="router.push('/projects')" :icon="FolderOpened">
+        返回项目列表
+      </ElButton>
     </div>
   </div>
 </template>
@@ -306,8 +336,17 @@ import {
   DataAnalysis,
   Warning,
   Timer,
-  Setting,
-  Loading
+  Loading,
+  ArrowLeft,
+  Wallet,
+  OfficeBuilding,
+  Calendar,
+  CircleCheck,
+  FolderOpened,
+  Star,
+  Menu,
+  EditPen,
+  Link
 } from '@element-plus/icons-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -333,6 +372,125 @@ const route = useRoute()
 const exhibitionStore = useExhibitionStore()
 
 const loading = ref(true)
+
+// 从 JSON 字符串中提取字段值
+const extractFromJsonString = (jsonString: string, fieldName: string): string => {
+  if (!jsonString) return ''
+
+  try {
+    // 尝试解析 JSON
+    const parsed = JSON.parse(jsonString)
+    // 如果有指定字段，返回该字段；否则返回整个对象转为字符串
+    return parsed[fieldName] || jsonString
+  } catch {
+    // JSON 解析失败，使用正则表达式提取字段值
+    const regex = new RegExp(`"${fieldName}"\\s*:\\s*"([^"]*)"`, 's')
+    const match = jsonString.match(regex)
+    if (match && match[1]) {
+      return match[1]
+    }
+
+    // 如果正则也失败，返回原字符串
+    return jsonString
+  }
+}
+
+// 清理 Markdown 代码块标记（用于 JSON 解析前）
+const removeCodeBlockMarkers = (text: string): string => {
+  if (!text) return ''
+  let cleaned = text
+
+  // 移除 ```json, ```javascript 等代码块开始标记
+  cleaned = cleaned.replace(/^```(?:json|javascript|js)?\s*\n?/i, '')
+  // 移除代码块结束标记 ```
+  cleaned = cleaned.replace(/\n?```$/m, '')
+
+  return cleaned.trim()
+}
+
+// 清理优化建议数组
+const cleanRecommendations = (recommendations: string[]): string[] => {
+  if (!Array.isArray(recommendations)) return []
+
+  const MAX_RECOMMENDATION_LENGTH = 300 // 最大建议长度（字符数）
+
+  return recommendations
+    .filter(rec => {
+      if (!rec || typeof rec !== 'string') return false
+
+      const cleanedRec = rec.trim()
+
+      // 过滤掉明显异常的建议
+      // 1. 过滤包含整个报告内容的建议（包含"预算明细"、"总成本估算"等关键词）
+      const invalidKeywords = ['预算明细', '总成本估算', 'breakdown', 'totalCost', '项目细分', '估算金额']
+      if (invalidKeywords.some(keyword => cleanedRec.includes(keyword))) {
+        console.warn('⚠️ [Results] 过滤掉异常建议（包含报告关键词）:', cleanedRec.substring(0, 50))
+        return false
+      }
+
+      // 2. 过滤过长的建议（超过最大长度）
+      if (cleanedRec.length > MAX_RECOMMENDATION_LENGTH) {
+        console.warn('⚠️ [Results] 过滤掉过长的建议:', cleanedRec.length, '字符')
+        return false
+      }
+
+      // 3. 过滤纯数字或编号的建议
+      if (/^\d+$/.test(cleanedRec)) {
+        console.warn('⚠️ [Results] 过滤掉纯数字建议:', cleanedRec)
+        return false
+      }
+
+      return true
+    })
+    .map(rec => {
+      // 清理每条建议的格式
+      let cleaned = rec.trim()
+
+      // 移除 Markdown 代码块标记
+      cleaned = removeCodeBlockMarkers(cleaned)
+
+      // 移除开头的数字编号（如 "1. "、"1、"）
+      cleaned = cleaned.replace(/^\d+\.?\s*/, '')
+
+      // 移除 Markdown 格式
+      cleaned = cleanMarkdownText(cleaned)
+
+      return cleaned
+    })
+    .filter(rec => rec.length > 10) // 过滤掉清理后过短的建议（小于10字符）
+}
+
+// 清理 Markdown 格式文本，提取纯文本内容
+const cleanMarkdownText = (text: string): string => {
+  if (!text) return ''
+
+  let cleaned = text
+
+  // 先移除代码块标记
+  cleaned = removeCodeBlockMarkers(cleaned)
+
+  // 移除 Markdown 标题符号
+  cleaned = cleaned.replace(/^#{1,6}\s+/gm, '')
+
+  // 移除加粗标记
+  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1')
+  cleaned = cleaned.replace(/__(.*?)__/g, '$1')
+
+  // 移除斜体标记
+  cleaned = cleaned.replace(/\*(.*?)\*/g, '$1')
+  cleaned = cleaned.replace(/_(.*?)_/g, '$1')
+
+  // 移除行内代码标记
+  cleaned = cleaned.replace(/`([^`]+)`/g, '$1')
+
+  // 清理多余的换行
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
+
+  // 移除开头和结尾的空白
+  cleaned = cleaned.trim()
+
+  return cleaned
+}
 
 // 直接使用 store 的响应式引用，而不是解构
 const currentWorkflow = computed(() => exhibitionStore.currentWorkflow)
@@ -386,12 +544,160 @@ const loadProjectData = async () => {
         messages: ['展陈设计已完成']
       }
 
-      // 解析 JSON 字符串
-      if (workflowData.conceptPlan) workflowData.conceptPlan = JSON.parse(workflowData.conceptPlan)
-      if (workflowData.spatialLayout) workflowData.spatialLayout = JSON.parse(workflowData.spatialLayout)
-      if (workflowData.visualDesign) workflowData.visualDesign = JSON.parse(workflowData.visualDesign)
-      if (workflowData.interactiveSolution) workflowData.interactiveSolution = JSON.parse(workflowData.interactiveSolution)
-      if (workflowData.budgetEstimate) workflowData.budgetEstimate = JSON.parse(workflowData.budgetEstimate)
+      // 解析 JSON 字符串（添加错误处理）
+      try {
+        if (workflowData.conceptPlan) {
+          workflowData.conceptPlan = JSON.parse(workflowData.conceptPlan)
+
+          // 处理 concept 字段
+          if (workflowData.conceptPlan.concept) {
+            let conceptText = workflowData.conceptPlan.concept
+
+            // 如果是字符串，需要处理可能的嵌套 JSON
+            if (typeof conceptText === 'string') {
+              // 先移除 Markdown 代码块标记
+              conceptText = removeCodeBlockMarkers(conceptText)
+
+              // 如果看起来像 JSON 对象，提取 concept 字段的值
+              if (conceptText.trim().startsWith('{')) {
+                conceptText = extractFromJsonString(conceptText, 'concept')
+              }
+
+              // 最后清理剩余的 Markdown 格式
+              conceptText = cleanMarkdownText(conceptText)
+            }
+
+            workflowData.conceptPlan.concept = conceptText
+          }
+
+          // 处理 narrative 字段
+          if (workflowData.conceptPlan.narrative) {
+            let narrativeText = workflowData.conceptPlan.narrative
+
+            // 如果是字符串，需要处理可能的嵌套 JSON
+            if (typeof narrativeText === 'string') {
+              // 先移除 Markdown 代码块标记
+              narrativeText = removeCodeBlockMarkers(narrativeText)
+
+              // 如果看起来像 JSON 对象，提取 narrative 字段的值
+              if (narrativeText.trim().startsWith('{')) {
+                narrativeText = extractFromJsonString(narrativeText, 'narrative')
+              }
+
+              // 最后清理剩余的 Markdown 格式
+              narrativeText = cleanMarkdownText(narrativeText)
+            }
+
+            workflowData.conceptPlan.narrative = narrativeText
+          }
+        }
+
+        // 处理空间设计
+        if (workflowData.spatialLayout) {
+          workflowData.spatialLayout = JSON.parse(workflowData.spatialLayout)
+
+          // 处理 layout 字段
+          if (workflowData.spatialLayout.layout) {
+            let layoutText = workflowData.spatialLayout.layout
+            if (typeof layoutText === 'string') {
+              layoutText = removeCodeBlockMarkers(layoutText)
+              if (layoutText.trim().startsWith('{')) {
+                layoutText = extractFromJsonString(layoutText, 'layout')
+              }
+              layoutText = cleanMarkdownText(layoutText)
+            }
+            workflowData.spatialLayout.layout = layoutText
+          }
+
+          // 处理 visitorRoute 字段
+          if (workflowData.spatialLayout.visitorRoute && Array.isArray(workflowData.spatialLayout.visitorRoute)) {
+            workflowData.spatialLayout.visitorRoute = workflowData.spatialLayout.visitorRoute.map((route: string) => {
+              if (typeof route === 'string') {
+                route = removeCodeBlockMarkers(route)
+                route = cleanMarkdownText(route)
+              }
+              return route
+            })
+          }
+        }
+
+        // 处理视觉设计
+        if (workflowData.visualDesign) {
+          workflowData.visualDesign = JSON.parse(workflowData.visualDesign)
+
+          // 处理 typography 字段
+          if (workflowData.visualDesign.typography) {
+            let typographyText = workflowData.visualDesign.typography
+            if (typeof typographyText === 'string') {
+              typographyText = removeCodeBlockMarkers(typographyText)
+              if (typographyText.trim().startsWith('{')) {
+                typographyText = extractFromJsonString(typographyText, 'typography')
+              }
+              typographyText = cleanMarkdownText(typographyText)
+            }
+            workflowData.visualDesign.typography = typographyText
+          }
+
+          // 处理 visualStyle 字段
+          if (workflowData.visualDesign.visualStyle) {
+            let styleText = workflowData.visualDesign.visualStyle
+            if (typeof styleText === 'string') {
+              styleText = removeCodeBlockMarkers(styleText)
+              if (styleText.trim().startsWith('{')) {
+                styleText = extractFromJsonString(styleText, 'visualStyle')
+              }
+              styleText = cleanMarkdownText(styleText)
+            }
+            workflowData.visualDesign.visualStyle = styleText
+          }
+        }
+
+        // 处理互动技术
+        if (workflowData.interactiveSolution) {
+          workflowData.interactiveSolution = JSON.parse(workflowData.interactiveSolution)
+
+          // 处理 interactives 数组中的 description 字段
+          if (workflowData.interactiveSolution.interactives && Array.isArray(workflowData.interactiveSolution.interactives)) {
+            workflowData.interactiveSolution.interactives = workflowData.interactiveSolution.interactives.map((interactive: any) => {
+              if (interactive.description && typeof interactive.description === 'string') {
+                interactive.description = removeCodeBlockMarkers(interactive.description)
+                interactive.description = cleanMarkdownText(interactive.description)
+              }
+              return interactive
+            })
+          }
+        }
+
+        // 处理预算估算
+        if (workflowData.budgetEstimate) {
+          workflowData.budgetEstimate = JSON.parse(workflowData.budgetEstimate)
+
+          // 处理 breakdown 数组中的 description 字段
+          if (workflowData.budgetEstimate.breakdown && Array.isArray(workflowData.budgetEstimate.breakdown)) {
+            workflowData.budgetEstimate.breakdown = workflowData.budgetEstimate.breakdown.map((item: any) => {
+              if (item.description && typeof item.description === 'string') {
+                item.description = removeCodeBlockMarkers(item.description)
+                item.description = cleanMarkdownText(item.description)
+              }
+              return item
+            })
+          }
+
+          // 处理 recommendations 数组 - 使用专门的清理函数
+          if (workflowData.budgetEstimate.recommendations && Array.isArray(workflowData.budgetEstimate.recommendations)) {
+            const originalCount = workflowData.budgetEstimate.recommendations.length
+            workflowData.budgetEstimate.recommendations = cleanRecommendations(workflowData.budgetEstimate.recommendations)
+            const cleanedCount = workflowData.budgetEstimate.recommendations.length
+
+            if (originalCount !== cleanedCount) {
+              console.log(`✅ [Results] 优化建议清理完成: ${originalCount} → ${cleanedCount} 条`)
+            }
+          }
+        }
+      } catch (parseError) {
+        console.error('❌ [Results] JSON 解析失败:', parseError)
+        ElMessage.warning('部分数据解析失败，将显示原始数据')
+      }
 
       exhibitionStore.completeProcessing(workflowData)
       console.log('✅ [Results] 项目数据加载成功')
@@ -466,39 +772,47 @@ const budgetChartOption = computed(() => {
 })
 
 // 方法
+const goBack = () => {
+  router.push('/projects')
+}
+
 const createNewProject = () => {
   router.push('/create')
 }
 
 const exportReport = async (format: 'pdf' | 'markdown') => {
   try {
-    ElMessage.success(`正在导出 ${format.toUpperCase()} 格式报告...`)
+    const projectId = route.params.id as string
+
+    if (!projectId) {
+      ElMessage.error('项目ID不存在')
+      return
+    }
+
+    ElMessage.info(`正在导出 ${format.toUpperCase()} 格式报告...`)
+
     // 调用 API 导出报告
-    // const blob = await exhibitionAPI.exportReport(projectId, format)
-    // 处理文件下载
+    const blob = await exhibitionAPI.exportReport(projectId, format)
+
+    // 创建下载链接
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `exhibition-report-${projectId}.${format}`
+
+    // 触发下载
+    document.body.appendChild(link)
+    link.click()
+
+    // 清理
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success(`${format.toUpperCase()} 报告导出成功`)
   } catch (error) {
+    console.error('导出报告失败:', error)
     ElMessage.error('导出失败，请重试')
   }
-}
-
-const getAgentReviewClass = (status: string) => {
-  const classes = {
-    pending: 'border-gray-300',
-    running: 'border-blue-300 bg-blue-50',
-    completed: 'border-green-300 bg-green-50',
-    error: 'border-red-300 bg-red-50'
-  }
-  return classes[status as keyof typeof classes] || 'border-gray-300'
-}
-
-const getAgentStatusDotClass = (status: string) => {
-  const classes = {
-    pending: 'bg-gray-400',
-    running: 'bg-blue-500',
-    completed: 'bg-green-500',
-    error: 'bg-red-500'
-  }
-  return classes[status as keyof typeof classes] || 'bg-gray-400'
 }
 
 const calculateDuration = (startTime?: Date, endTime?: Date) => {
@@ -523,11 +837,6 @@ const calculateDuration = (startTime?: Date, endTime?: Date) => {
 
 onMounted(async () => {
   try {
-    console.log('🔍 [Results] onMounted 开始')
-    console.log('🔍 [Results] exhibitionStore:', exhibitionStore)
-    console.log('🔍 [Results] currentWorkflow value:', exhibitionStore.currentWorkflow)
-    console.log('🔍 [Results] currentWorkflow computed value:', currentWorkflow.value)
-
     // 如果有当前工作流数据，直接使用
     if (currentWorkflow.value) {
       console.log('✅ [Results] 使用 store 中的工作流数据')
@@ -543,7 +852,7 @@ onMounted(async () => {
       console.log('⚠️ [Results] 没有找到工作流数据，重定向到首页')
       ElMessage.warning('未找到项目数据')
       setTimeout(() => {
-        router.push('/')
+        router.push('/projects')
       }, 1500)
     } else {
       console.log('✅ [Results] 工作流数据已加载')
@@ -554,3 +863,661 @@ onMounted(async () => {
   }
 })
 </script>
+
+<style scoped>
+.results-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+  padding: 2rem;
+}
+
+/* 加载状态 */
+.loading-state {
+  background: white;
+  border-radius: 16px;
+  padding: 4rem 2rem;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.loading-state .el-icon {
+  font-size: 3rem;
+  color: #3b82f6;
+  margin-bottom: 1rem;
+}
+
+.loading-state p {
+  color: #6b7280;
+  margin: 0;
+}
+
+/* 页面头部 */
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.header-content {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.title-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.back-button {
+  flex-shrink: 0;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.page-title .el-icon {
+  color: #10b981;
+  font-size: 2.25rem;
+}
+
+.page-subtitle {
+  color: #6b7280;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* 项目概览 */
+.overview-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  color: white;
+}
+
+.stat-budget .stat-icon {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.stat-area .stat-icon {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.stat-duration .stat-icon {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.stat-completed .stat-icon {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+/* 设计方案网格 */
+.design-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.design-card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.design-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.card-header {
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.header-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: white;
+}
+
+.card-concept .header-icon {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card-spatial .header-icon {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.card-visual .header-icon {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.card-interactive .header-icon {
+  background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+}
+
+.card-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+.info-section {
+  margin-bottom: 1.25rem;
+}
+
+.info-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 0.5rem 0;
+}
+
+.section-content {
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.color-palette {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.color-swatch {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.zone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.zone-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.zone-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.zone-info {
+  color: #6b7280;
+  font-size: 0.8125rem;
+}
+
+.interactive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.interactive-item {
+  padding: 1rem;
+  background: #eff6ff;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.interactive-info {
+  flex: 1;
+}
+
+.interactive-name {
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.interactive-desc {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.interactive-cost {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.cost-label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.cost-value {
+  font-weight: 600;
+  color: #10b981;
+}
+
+/* 预算部分 */
+.budget-section {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.section-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.section-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.25rem;
+}
+
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.budget-total {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.budget-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.budget-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.budget-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.budget-item:hover {
+  background: #f3f4f6;
+}
+
+.budget-item-info {
+  flex: 1;
+}
+
+.budget-category {
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.budget-desc {
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+
+.budget-amount {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 1rem;
+}
+
+.budget-chart {
+  grid-column: 1 / -1;
+}
+
+.chart-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 1rem 0;
+}
+
+.chart-container {
+  height: 300px;
+}
+
+.recommendations {
+  grid-column: 1 / -1;
+}
+
+.recommendations-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 0.75rem 0;
+}
+
+.recommendation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recommendation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #fef3c7;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #92400e;
+}
+
+.recommendation-icon {
+  color: #f59e0b;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+/* 智能体部分 */
+.agents-section {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.agent-card {
+  padding: 1rem;
+  border-radius: 12px;
+  border: 2px solid;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.agent-pending {
+  border-color: #d1d5db;
+  background: #f9fafb;
+}
+
+.agent-running {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.agent-completed {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+}
+
+.agent-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot-pending {
+  background: #9ca3af;
+}
+
+.dot-running {
+  background: #3b82f6;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.dot-completed {
+  background: #10b981;
+}
+
+.dot-error {
+  background: #ef4444;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.agent-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.agent-duration {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* 空状态 */
+.empty-state {
+  background: white;
+  border-radius: 16px;
+  padding: 4rem 2rem;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.empty-icon {
+  font-size: 5rem;
+  color: #d1d5db;
+  margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+  font-size: 1.5rem;
+  color: #1f2937;
+  margin: 0 0 0.5rem 0;
+}
+
+.empty-state p {
+  color: #6b7280;
+  margin: 0 0 1.5rem 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+  .design-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .budget-content {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .results-page {
+    padding: 1rem;
+  }
+
+  .header-content {
+    padding: 1.5rem;
+  }
+
+  .title-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+  }
+
+  .action-buttons .el-button {
+    width: 100%;
+  }
+
+  .overview-section {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .stat-icon {
+    width: 48px;
+    height: 48px;
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .overview-section {
+    grid-template-columns: 1fr;
+  }
+
+  .agents-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

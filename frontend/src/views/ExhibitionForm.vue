@@ -387,7 +387,7 @@ const form = reactive<ExhibitionRequirement>({
     layout: ''
   },
   budget: {
-    total: 300000,
+    total: 1000000,
     currency: 'CNY'
   },
   duration: {

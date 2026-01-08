@@ -7,11 +7,20 @@
     "build": "tsc",
     "start": "tsx src/index.ts",
     "dev": "tsx --watch src/index.ts",
+    "dev:all": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm run dev\" --names \"BACKEND,FRONTEND\" -c \"bgBlue.bold,bgGreen.bold\"",
     "test": "tsx src/examples/basic-example.ts",
     "test-deepseek": "tsx src/examples/deepseek-example.ts",
     "config:validate": "tsx src/scripts/validate-config.ts"
   },
-  "keywords": ["exhibition", "design", "multi-agent", "langgraph", "typescript", "deepseek", "openai"],
+  "keywords": [
+    "exhibition",
+    "design",
+    "multi-agent",
+    "langgraph",
+    "typescript",
+    "deepseek",
+    "openai"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -23,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "concurrently": "^9.2.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }
