@@ -313,6 +313,9 @@ async function runExhibitionAsync(
     if (result.conceptPlan) {
       designResultQueries.save(dbWorkflow.id, 'concept', JSON.stringify(result.conceptPlan))
     }
+    if (result.exhibitionOutline) {
+      designResultQueries.save(dbWorkflow.id, 'outline', JSON.stringify(result.exhibitionOutline))
+    }
     if (result.spatialLayout) {
       designResultQueries.save(dbWorkflow.id, 'spatial', JSON.stringify(result.spatialLayout))
     }
@@ -476,6 +479,19 @@ async function generateReport(id: string, format: string): Promise<string | Buff
   const latestWorkflow = workflows[0] // 获取最新工作流
   const designResults = designResultQueries.getByWorkflowId(latestWorkflow.id)
 
+  // 📊 详细日志：记录查询到的所有设计结果类型
+  logger.info('📊 [PDF生成] 从数据库查询到的设计结果', {
+    projectId: id,
+    workflowId: latestWorkflow.id,
+    totalResults: designResults.length,
+    resultTypes: designResults.map(r => r.result_type),
+    resultDetails: designResults.map(r => ({
+      type: r.result_type,
+      dataSize: r.result_data?.length || 0,
+      hasData: !!r.result_data
+    }))
+  })
+
   // 查找报告
   const reportResult = designResults.find(r => r.result_type === 'report')
 
@@ -483,20 +499,70 @@ async function generateReport(id: string, format: string): Promise<string | Buff
 
   if (reportResult) {
     // 如果数据库中已有报告，直接返回
-    logger.info('从数据库读取报告', { projectId: id, workflowId: latestWorkflow.id })
+    logger.info('✅ [PDF生成] 从数据库读取已保存的报告', {
+      projectId: id,
+      workflowId: latestWorkflow.id,
+      reportSize: reportResult.result_data?.length || 0
+    })
     markdown = reportResult.result_data
   } else {
     // 如果数据库中没有报告，从设计结果动态生成
-    logger.info('数据库中无报告，从设计结果动态生成', { projectId: id, workflowId: latestWorkflow.id })
+    logger.info('🔄 [PDF生成] 数据库中无报告，从设计结果动态生成', {
+      projectId: id,
+      workflowId: latestWorkflow.id
+    })
 
     const conceptResult = designResults.find(r => r.result_type === 'concept')
+    const outlineResult = designResults.find(r => r.result_type === 'outline')
     const spatialResult = designResults.find(r => r.result_type === 'spatial')
     const visualResult = designResults.find(r => r.result_type === 'visual')
     const interactiveResult = designResults.find(r => r.result_type === 'interactive')
     const budgetResult = designResults.find(r => r.result_type === 'budget')
 
+    // 📊 详细日志：记录各个设计结果是否存在
+    logger.info('📊 [PDF生成] 各设计结果查找结果', {
+      hasConcept: !!conceptResult,
+      hasOutline: !!outlineResult,
+      hasSpatial: !!spatialResult,
+      hasVisual: !!visualResult,
+      hasInteractive: !!interactiveResult,
+      hasBudget: !!budgetResult
+    })
+
+    // 📊 如果找到outlineResult，记录其内容概要
+    if (outlineResult) {
+      try {
+        const outlineData = JSON.parse(outlineResult.result_data)
+        logger.info('✅ [PDF生成] 找到大纲细化数据', {
+          outlineId: outlineResult.id,
+          dataSize: outlineResult.result_data?.length || 0,
+          zones: outlineData.zones?.length || 0,
+          exhibits: outlineData.exhibits?.length || 0,
+          interactivePlan: outlineData.interactivePlan?.length || 0,
+          hasBudgetAllocation: !!outlineData.budgetAllocation,
+          hasSpaceConstraints: !!outlineData.spaceConstraints
+        })
+      } catch (e) {
+        logger.error('❌ [PDF生成] 解析大纲细化数据失败', {
+          error: e instanceof Error ? e.message : '未知错误'
+        })
+      }
+    } else {
+      logger.warn('⚠️  [PDF生成] 未找到大纲细化数据 (result_type="outline")')
+    }
+
+    logger.info('📝 [PDF生成] 开始调用 generateMarkdownFromResults')
+    const startTime = Date.now()
+
     // 生成 Markdown 内容
-    markdown = generateMarkdownFromResults(project, conceptResult, spatialResult, visualResult, interactiveResult, budgetResult, designResults)
+    markdown = generateMarkdownFromResults(project, conceptResult, outlineResult, spatialResult, visualResult, interactiveResult, budgetResult, designResults)
+
+    const duration = Date.now() - startTime
+    logger.info('✅ [PDF生成] Markdown生成完成', {
+      markdownSize: markdown?.length || 0,
+      duration: `${duration}ms`,
+      hasOutlineSection: markdown?.includes('### 2. 大纲细化') || false
+    })
   }
 
   // 如果是 Markdown 格式，直接返回
@@ -528,12 +594,22 @@ async function generateReport(id: string, format: string): Promise<string | Buff
 function generateMarkdownFromResults(
   project: any,
   conceptResult: any,
+  outlineResult: any,
   spatialResult: any,
   visualResult: any,
   interactiveResult: any,
   budgetResult: any,
   designResults: any[]
 ): string {
+  logger.info('📝 [Markdown生成] generateMarkdownFromResults 开始执行', {
+    hasConcept: !!conceptResult,
+    hasOutline: !!outlineResult,
+    hasSpatial: !!spatialResult,
+    hasVisual: !!visualResult,
+    hasInteractive: !!interactiveResult,
+    hasBudget: !!budgetResult
+  })
+
   let markdown = `# 展陈设计项目报告
 
 ## 项目概述
@@ -572,11 +648,85 @@ function generateMarkdownFromResults(
     }
   }
 
+  // 大纲细化（新增）
+  if (outlineResult) {
+    logger.info('✅ [Markdown生成] 开始添加大纲细化章节')
+    try {
+      const outline = JSON.parse(outlineResult.result_data)
+      logger.info('📊 [Markdown生成] 大纲数据解析成功', {
+        zonesCount: outline.zones?.length || 0,
+        exhibitsCount: outline.exhibits?.length || 0,
+        interactivePlanCount: outline.interactivePlan?.length || 0,
+        hasBudgetAllocation: !!outline.budgetAllocation,
+        hasSpaceConstraints: !!outline.spaceConstraints
+      })
+
+      markdown += `### 2. 大纲细化
+
+**展区划分** (${outline.zones?.length || 0}个展区):
+${outline.zones?.map((z: any) =>
+  `- **${z.name}** (占比${z.percentage}%)
+  - 面积: ${z.area}㎡
+  - 功能: ${z.function}
+  - 预算分配: ¥${z.budgetAllocation?.toLocaleString() || '未提供'}
+  - 展品数量: ${z.exhibitIds?.length || 0}件
+  - 互动装置: ${z.interactiveIds?.length || 0}个`
+).join('\n\n') || '未提供'}
+
+**展品清单** (${outline.exhibits?.length || 0}件展品):
+${outline.exhibits?.slice(0, 15).map((e: any) =>
+  `- **${e.name}**
+  - 类型: ${e.type}
+  - 保护等级: ${e.protectionLevel}
+  - 展柜要求: ${e.showcaseRequirement}
+  - 保险费用: ¥${e.insurance?.toLocaleString() || '未提供'}
+  - 运输费用: ¥${e.transportCost?.toLocaleString() || '未提供'}${e.dimensions ? `\n  - 尺寸: ${e.dimensions.length}×${e.dimensions.width}×${e.dimensions.height}米` : ''}`
+).join('\n\n') || '未提供'}
+${outline.exhibits?.length > 15 ? `\n*注：共 ${outline.exhibits.length} 件展品，以上仅展示前 15 件*` : ''}
+
+**互动装置规划** (${outline.interactivePlan?.length || 0}个装置):
+${outline.interactivePlan?.map((ip: any) =>
+  `- **${ip.name}** (${ip.type})
+  - 优先级: ${ip.priority === 'high' ? '高' : ip.priority === 'medium' ? '中' : '低'}
+  - 预估成本: ¥${ip.estimatedCost?.toLocaleString() || '未提供'}
+  - 放置展区: ${ip.zoneId}
+  - 功能描述: ${ip.description}`
+).join('\n\n') || '未提供'}
+
+**预算框架**:
+- 总预算: ¥${outline.budgetAllocation?.total?.toLocaleString() || '未提供'}
+${outline.budgetAllocation?.breakdown?.map((b: any) =>
+  `- **${b.category}**: ¥${b.amount?.toLocaleString() || '未提供'}${b.subCategories ? `\n  ${b.subCategories.map((sub: any) => `    - ${sub.name}: ¥${sub.amount?.toLocaleString() || '未提供'}`).join('\n ')}` : ''}`
+).join('\n') || '未提供'}
+
+**空间约束**:
+- 总面积: ${outline.spaceConstraints?.totalArea || '未提供'}㎡
+- 展区数量: ${outline.spaceConstraints?.minZoneCount || '-'} - ${outline.spaceConstraints?.maxZoneCount || '-'} 个
+- 通道宽度: ≥${outline.spaceConstraints?.minAisleWidth || '-'} 米
+- 主展区占比: ≥${outline.spaceConstraints?.mainZoneRatio ? (outline.spaceConstraints.mainZoneRatio * 100).toFixed(0) : '-'}%
+
+`
+      logger.info('✅ [Markdown生成] 大纲细化章节添加成功')
+    } catch (e) {
+      logger.error('❌ [Markdown生成] 大纲数据解析失败', {
+        error: e instanceof Error ? e.message : '未知错误',
+        stack: e instanceof Error ? e.stack : undefined
+      })
+      markdown += `### 2. 大纲细化
+
+数据解析失败: ${e instanceof Error ? e.message : '未知错误'}
+
+`
+    }
+  } else {
+    logger.warn('⚠️  [Markdown生成] outlineResult 为空，跳过大纲细化章节')
+  }
+
   // 空间设计
   if (spatialResult) {
     try {
       const spatial = JSON.parse(spatialResult.result_data)
-      markdown += `### 2. 空间设计
+      markdown += `### 3. 空间设计
 
 **布局方案**: ${spatial.layout || '未提供'}
 
@@ -587,7 +737,7 @@ ${spatial.zones?.map((z: any) => `- ${z.name}: ${z.area}㎡ (${z.function})`).jo
 
 `
     } catch (e) {
-      markdown += `### 2. 空间设计
+      markdown += `### 3. 空间设计
 
 数据解析失败
 
@@ -599,7 +749,7 @@ ${spatial.zones?.map((z: any) => `- ${z.name}: ${z.area}㎡ (${z.function})`).jo
   if (visualResult) {
     try {
       const visual = JSON.parse(visualResult.result_data)
-      markdown += `### 3. 视觉设计
+      markdown += `### 4. 视觉设计
 
 **色彩方案**: ${visual.colorScheme?.join(', ') || '未提供'}
 
@@ -611,7 +761,7 @@ ${spatial.zones?.map((z: any) => `- ${z.name}: ${z.area}㎡ (${z.function})`).jo
 
 `
     } catch (e) {
-      markdown += `### 3. 视觉设计
+      markdown += `### 4. 视觉设计
 
 数据解析失败
 
@@ -623,7 +773,7 @@ ${spatial.zones?.map((z: any) => `- ${z.name}: ${z.area}㎡ (${z.function})`).jo
   if (interactiveResult) {
     try {
       const interactive = JSON.parse(interactiveResult.result_data)
-      markdown += `### 4. 互动技术
+      markdown += `### 5. 互动技术
 
 **使用技术**: ${interactive.technologies?.join(', ') || '未提供'}
 
@@ -632,7 +782,7 @@ ${interactive.interactives?.map((i: any) => `- **${i.name}** (${i.type}): ${i.de
 
 `
     } catch (e) {
-      markdown += `### 4. 互动技术
+      markdown += `### 5. 互动技术
 
 数据解析失败
 
@@ -644,7 +794,7 @@ ${interactive.interactives?.map((i: any) => `- **${i.name}** (${i.type}): ${i.de
   if (budgetResult) {
     try {
       const budget = JSON.parse(budgetResult.result_data)
-      markdown += `### 5. 预算估算
+      markdown += `### 6. 预算估算
 
 **总成本**: ${budget.totalCost?.toLocaleString() || '未提供'} ${project.budget_currency}
 
@@ -656,7 +806,7 @@ ${budget.recommendations?.map((r: string) => `- ${r}`).join('\n') || '无'}
 
 `
     } catch (e) {
-      markdown += `### 5. 预算估算
+      markdown += `### 6. 预算估算
 
 数据解析失败
 
@@ -665,11 +815,11 @@ ${budget.recommendations?.map((r: string) => `- ${r}`).join('\n') || '无'}
   }
 
   // 添加项目完成状态
-  const completedSteps = [conceptResult, spatialResult, visualResult, interactiveResult, budgetResult].filter(Boolean).length
+  const completedSteps = [conceptResult, outlineResult, spatialResult, visualResult, interactiveResult, budgetResult].filter(Boolean).length
 
   markdown += `## 项目状态
 
-**完成度**: ${Math.round((completedSteps / 5) * 100)}% (${completedSteps}/5个阶段已完成)
+**完成度**: ${Math.round((completedSteps / 6) * 100)}% (${completedSteps}/6个阶段已完成)
 
 **项目状态**: ${project.status === 'completed' ? '已完成' : '进行中'}
 
@@ -679,6 +829,21 @@ ${budget.recommendations?.map((r: string) => `- ${r}`).join('\n') || '无'}
 
 *本报告由展陈设计多智能体系统自动生成*
 `
+
+  // 📊 详细日志：记录最终生成的markdown概要
+  logger.info('✅ [Markdown生成] generateMarkdownFromResults 执行完成', {
+    totalSize: markdown.length,
+    completedSteps,
+    completionPercentage: `${Math.round((completedSteps / 6) * 100)}%`,
+    sections: {
+      hasConcept: markdown.includes('### 1. 概念策划'),
+      hasOutline: markdown.includes('### 2. 大纲细化'),
+      hasSpatial: markdown.includes('### 3. 空间设计'),
+      hasVisual: markdown.includes('### 4. 视觉设计'),
+      hasInteractive: markdown.includes('### 5. 互动技术'),
+      hasBudget: markdown.includes('### 6. 预算估算')
+    }
+  })
 
   return markdown
 }
@@ -1181,6 +1346,9 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
 
         if (result.conceptPlan) {
           designResultQueries.save(dbWorkflow.id, 'concept', JSON.stringify(result.conceptPlan))
+        }
+        if (result.exhibitionOutline) {
+          designResultQueries.save(dbWorkflow.id, 'outline', JSON.stringify(result.exhibitionOutline))
         }
         if (result.spatialLayout) {
           designResultQueries.save(dbWorkflow.id, 'spatial', JSON.stringify(result.spatialLayout))

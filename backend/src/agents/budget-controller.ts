@@ -2,7 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import {
   ExhibitionRequirement,
-  ConceptPlan,
+  ExhibitionOutline,
   SpatialLayout,
   VisualDesign,
   InteractiveSolution,
@@ -51,7 +51,7 @@ export class BudgetControllerAgent {
 
   async generateBudgetEstimate(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan,
+    exhibitionOutline: ExhibitionOutline, // 修改：接收ExhibitionOutline
     spatialLayout: SpatialLayout,
     visualDesign: VisualDesign,
     interactiveSolution: InteractiveSolution,
@@ -66,7 +66,7 @@ export class BudgetControllerAgent {
 
     try {
       // ✅ 输入参数验证
-      this.validateInputs(requirements, conceptPlan, spatialLayout, visualDesign, interactiveSolution);
+      this.validateInputs(requirements, exhibitionOutline, spatialLayout, visualDesign, interactiveSolution);
 
       // 📥 完整记录输入参数
       this.logger.info('📥 [输入参数] 原始需求', {
@@ -81,10 +81,11 @@ export class BudgetControllerAgent {
         endDate: requirements.duration.endDate
       });
 
-      this.logger.info('📥 [输入参数] 策划方案（来自策划智能体）', {
-        concept: conceptPlan.concept,
-        keyExhibitsCount: conceptPlan.keyExhibits.length,
-        keyExhibits: conceptPlan.keyExhibits
+      this.logger.info('📥 [输入参数] 展览大纲（来自大纲细化智能体）', {
+        concept: exhibitionOutline.conceptPlan.concept,
+        keyExhibitsCount: exhibitionOutline.exhibits.length,
+        zonesCount: exhibitionOutline.zones.length,
+        budgetFramework: exhibitionOutline.budgetAllocation.total
       });
 
       this.logger.info('📥 [输入参数] 空间布局（来自空间智能体）', {
@@ -110,7 +111,7 @@ export class BudgetControllerAgent {
       // ✅ 基于实际设计方案计算预算明细
       const breakdown = this.calculateBreakdown(
         requirements,
-        conceptPlan,
+        exhibitionOutline,
         spatialLayout,
         visualDesign,
         interactiveSolution
@@ -145,9 +146,9 @@ export class BudgetControllerAgent {
           height: requirements.venueSpace.height,
           startDate: requirements.duration.startDate,
           endDate: requirements.duration.endDate,
-          // 设计方案信息（用于生成针对性建议）
-          concept: conceptPlan.concept,
-          keyExhibits: conceptPlan.keyExhibits.join("；"),
+          // 大纲信息（用于生成针对性建议）
+          concept: exhibitionOutline.conceptPlan.concept,
+          keyExhibits: exhibitionOutline.exhibits.map(e => e.name).join("；"),
           zones: spatialLayout.zones.map(z =>
             `${z.name}（${z.area}㎡，功能：${z.function}）`
           ).join("；"),
@@ -245,7 +246,7 @@ export class BudgetControllerAgent {
    */
   private validateInputs(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan,
+    exhibitionOutline: ExhibitionOutline,
     spatialLayout: SpatialLayout,
     visualDesign: VisualDesign,
     interactiveSolution: InteractiveSolution
@@ -254,8 +255,8 @@ export class BudgetControllerAgent {
       throw new Error("requirements 参数不能为空");
     }
 
-    if (!conceptPlan) {
-      throw new Error("conceptPlan 参数不能为空");
+    if (!exhibitionOutline) {
+      throw new Error("exhibitionOutline 参数不能为空");
     }
 
     if (!spatialLayout) {
@@ -289,7 +290,7 @@ export class BudgetControllerAgent {
    */
   private calculateBreakdown(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan,
+    exhibitionOutline: ExhibitionOutline, // 修改：接收ExhibitionOutline
     spatialLayout: SpatialLayout,
     visualDesign: VisualDesign,
     interactiveSolution: InteractiveSolution
@@ -360,15 +361,23 @@ export class BudgetControllerAgent {
       totalVisualCost: visualCost
     });
 
-    // 4. 展品运输与保险（基于 keyExhibits）
-    const exhibitsCount = conceptPlan.keyExhibits.length;
+    // 4. 展品运输与保险（基于展览大纲中的exhibits）
+    // 使用大纲中每件展品的实际保险和运输费用
+    const exhibitsCount = exhibitionOutline.exhibits.length;
+    const exhibitCost = exhibitionOutline.exhibits.reduce(
+      (sum, exhibit) => sum + exhibit.insurance + exhibit.transportCost,
+      0
+    );
 
-    // 每件展品平均运输保险费：8000元
-    const exhibitCost = Math.floor(exhibitsCount * 8000);
-
-    this.logger.info('💰 [预算计算] 展品运输与保险', {
+    this.logger.info('💰 [预算计算] 展品运输与保险（基于大纲实际数据）', {
       exhibitsCount,
-      cost: exhibitCost
+      cost: exhibitCost,
+      exhibits: exhibitionOutline.exhibits.map(e => ({
+        name: e.name,
+        protectionLevel: e.protectionLevel,
+        insurance: e.insurance,
+        transportCost: e.transportCost
+      }))
     });
 
     // 5. 人员费用（基于展期）
@@ -426,7 +435,7 @@ export class BudgetControllerAgent {
       {
         category: "展品运输与保险",
         amount: exhibitCost,
-        description: `包含${exhibitsCount}件重点展品：${conceptPlan.keyExhibits.join("、")}。专业运输、仓储、保险费用`
+        description: `包含${exhibitsCount}件展品：${exhibitionOutline.exhibits.map(e => e.name).join("、")}。专业运输、仓储、保险费用（基于大纲详细数据）`
       },
       {
         category: "人员费用",

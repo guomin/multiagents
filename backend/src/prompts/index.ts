@@ -9,6 +9,7 @@ import { PromptTemplate } from './types';
 
 // 导出各个智能体的 prompt 模板
 export * from './curator.prompts';
+export * from './outline.prompts';
 export * from './spatial-designer.prompts';
 export * from './visual-designer.prompts';
 export * from './interactive-tech.prompts';
@@ -17,6 +18,7 @@ export * from './supervisor.prompts';
 
 import { promptManager } from './PromptManager';
 import { CURATOR_PROMPTS } from './curator.prompts';
+import { OUTLINE_PROMPTS } from './outline.prompts';
 import { SPATIAL_DESIGNER_PROMPTS } from './spatial-designer.prompts';
 import { VISUAL_DESIGNER_PROMPTS } from './visual-designer.prompts';
 import { INTERACTIVE_TECH_PROMPTS } from './interactive-tech.prompts';
@@ -33,6 +35,12 @@ export function initializePrompts(): void {
     curatorPromptsWithPrefix[`curator.${task}`] = template;
   });
   promptManager.registerPrompts(curatorPromptsWithPrefix);
+
+  const outlinePromptsWithPrefix: Record<string, PromptTemplate> = {};
+  Object.entries(OUTLINE_PROMPTS).forEach(([task, template]) => {
+    outlinePromptsWithPrefix[`outline.${task}`] = template;
+  });
+  promptManager.registerPrompts(outlinePromptsWithPrefix);
 
   const spatialDesignerPromptsWithPrefix: Record<string, PromptTemplate> = {};
   Object.entries(SPATIAL_DESIGNER_PROMPTS).forEach(([task, template]) => {

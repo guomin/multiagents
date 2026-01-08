@@ -127,6 +127,26 @@ export class SupervisorAgent {
         keyExhibits: state.conceptPlan?.keyExhibits?.join(", ") || '尚未提供',
         visitorFlow: state.conceptPlan?.visitorFlow || '尚未提供',
 
+        // 大纲细化字段（新增）
+        exhibitionOutline: !!state.exhibitionOutline,
+        outlineZones: state.exhibitionOutline?.zones?.map((z, idx) =>
+          `${idx + 1}. ${z.name}（${z.percentage}%）：${z.area}㎡，${z.function}，展品${z.exhibitIds?.length || 0}件，互动${z.interactiveIds?.length || 0}个`
+        ).join('\n') || '尚未提供',
+        outlineExhibitsCount: state.exhibitionOutline?.exhibits?.length || 0,
+        outlineExhibits: state.exhibitionOutline?.exhibits?.slice(0, 10).map((e, idx) =>
+          `${idx + 1}. ${e.name}（${e.type}，保护等级：${e.protectionLevel}）`
+        ).join('\n') || '尚未提供',
+        outlineInteractiveCount: state.exhibitionOutline?.interactivePlan?.length || 0,
+        outlineInteractive: state.exhibitionOutline?.interactivePlan?.map((ip, idx) =>
+          `${idx + 1}. ${ip.name}（${ip.type}，优先级：${ip.priority}，预估成本：¥${ip.estimatedCost?.toLocaleString()}）`
+        ).join('\n') || '尚未提供',
+        outlineBudgetTotal: state.exhibitionOutline?.budgetAllocation?.total?.toLocaleString() || '未提供',
+        outlineBudgetBreakdown: state.exhibitionOutline?.budgetAllocation?.breakdown?.map(b =>
+          `- ${b.category}：¥${b.amount?.toLocaleString()}${b.subCategories ? `\n  ${b.subCategories.map((s: any) => `    - ${s.name}：¥${s.amount?.toLocaleString()}`).join('\n  ')}` : ''}`
+        ).join('\n') || '尚未提供',
+        outlineSpaceTotal: state.exhibitionOutline?.spaceConstraints?.totalArea || '未提供',
+        outlineSpaceZones: `${state.exhibitionOutline?.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline?.spaceConstraints?.maxZoneCount || '-'} 个`,
+
         // 空间设计字段
         spatialLayout: !!state.spatialLayout,
         spatialLayoutDesc: state.spatialLayout?.layout || '尚未提供',
@@ -160,12 +180,13 @@ export class SupervisorAgent {
         // 项目完成状态
         completedSteps: [
           state.conceptPlan,
+          state.exhibitionOutline,
           state.spatialLayout,
           state.visualDesign,
           state.interactiveSolution,
           state.budgetEstimate
         ].filter(Boolean).length,
-        totalSteps: 5,
+        totalSteps: 6,
         iterationCount: state.iterationCount
       }
     );
@@ -200,13 +221,14 @@ export class SupervisorAgent {
   private generateSimpleReport(state: ExhibitionState): string {
     const completedSteps = [
       state.conceptPlan,
+      state.exhibitionOutline,
       state.spatialLayout,
       state.visualDesign,
       state.interactiveSolution,
       state.budgetEstimate
     ].filter(Boolean).length;
 
-    const completionRate = Math.round((completedSteps / 5) * 100);
+    const completionRate = Math.round((completedSteps / 6) * 100);
 
     return `
 # 展陈设计项目报告
@@ -231,7 +253,33 @@ ${state.conceptPlan ? `
 - **参观流程**: ${state.conceptPlan.visitorFlow || '未提供'}
 ` : "⚠️ 概念策划尚未完成"}
 
-### 2. 空间设计
+### 2. 大纲细化
+${state.exhibitionOutline ? `
+- **展区划分** (${state.exhibitionOutline.zones?.length || 0}个展区):
+${state.exhibitionOutline.zones?.map((z, idx) =>
+  `  ${idx + 1}. ${z.name}（占比${z.percentage}%）：${z.area}㎡，${z.function}，展品${z.exhibitIds?.length || 0}件，互动${z.interactiveIds?.length || 0}个`
+).join("\n") || '未提供'}
+
+- **展品清单** (${state.exhibitionOutline.exhibits?.length || 0}件展品):
+${state.exhibitionOutline.exhibits?.slice(0, 10).map((e, idx) =>
+  `  ${idx + 1}. ${e.name}（${e.type}，保护等级：${e.protectionLevel}）`
+).join("\n") || '未提供'}
+${state.exhibitionOutline.exhibits?.length > 10 ? `\n  *注：共 ${state.exhibitionOutline.exhibits.length} 件展品，以上仅展示前 10 件*` : ''}
+
+- **互动装置规划** (${state.exhibitionOutline.interactivePlan?.length || 0}个装置):
+${state.exhibitionOutline.interactivePlan?.map((ip, idx) =>
+  `  ${idx + 1}. ${ip.name}（${ip.type}，优先级：${ip.priority}，预估成本：¥${ip.estimatedCost?.toLocaleString()}）`
+).join("\n") || '未提供'}
+
+- **预算框架**: 总计 ¥${state.exhibitionOutline.budgetAllocation?.total?.toLocaleString() || '未提供'}
+${state.exhibitionOutline.budgetAllocation?.breakdown?.map(b =>
+  `  - **${b.category}**：¥${b.amount?.toLocaleString()}${b.subCategories ? `\n${b.subCategories.map((s: any) => `    - ${s.name}：¥${s.amount?.toLocaleString()}`).join("\n")}` : ''}`
+).join("\n") || '未提供'}
+
+- **空间约束**: 总面积 ${state.exhibitionOutline.spaceConstraints?.totalArea || '未提供'}㎡，展区数量 ${state.exhibitionOutline.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline.spaceConstraints?.maxZoneCount || '-'} 个
+` : "⚠️ 大纲细化尚未完成"}
+
+### 3. 空间设计
 ${state.spatialLayout ? `
 - **布局方案**: ${state.spatialLayout.layout}
 - **参观路线**: ${state.spatialLayout.visitorRoute.join(" → ")}
@@ -239,7 +287,7 @@ ${state.spatialLayout ? `
 ${state.spatialLayout.zones.map(z => `  - ${z.name}: ${z.area}㎡ (${z.function})`).join("\n")}
 ` : "⚠️ 空间设计尚未完成"}
 
-### 3. 视觉设计
+### 4. 视觉设计
 ${state.visualDesign ? `
 - **色彩方案**: ${state.visualDesign.colorScheme.join(", ")}
 - **字体设计**: ${state.visualDesign.typography}
@@ -247,7 +295,7 @@ ${state.visualDesign ? `
 - **视觉风格**: ${state.visualDesign.visualStyle || '未指定'}
 ` : "⚠️ 视觉设计尚未完成"}
 
-### 4. 互动技术
+### 5. 互动技术
 ${state.interactiveSolution ? `
 - **使用技术**: ${state.interactiveSolution.technologies.join(", ")}
 - **互动装置**:
@@ -256,7 +304,7 @@ ${state.interactiveSolution.interactives.map(i =>
 ).join("\n")}
 ` : "⚠️ 互动技术方案尚未完成"}
 
-### 5. 预算估算
+### 6. 预算估算
 ${state.budgetEstimate ? `
 - **总成本**: ${state.budgetEstimate.totalCost.toLocaleString()} ${state.requirements.budget.currency}
 - **预算明细**:
@@ -268,7 +316,7 @@ ${state.budgetEstimate.recommendations.map(r => `  - ${r}`).join("\n")}
 ` : "⚠️ 预算估算尚未完成"}
 
 ## 项目状态
-- **完成度**: ${completionRate}% (${completedSteps}/5个阶段已完成)
+- **完成度**: ${completionRate}% (${completedSteps}/6个阶段已完成)
 - **迭代次数**: ${state.iterationCount + 1}
 
 ---
@@ -298,11 +346,16 @@ ${state.budgetEstimate.recommendations.map(r => `  - ${r}`).join("\n")}
         narrative: state.conceptPlan?.narrative || '',
         keyExhibits: state.conceptPlan?.keyExhibits?.join(", ") || '',
         visitorFlow: state.conceptPlan?.visitorFlow || '',
+        // 大纲细化字段（新增）
+        exhibitionOutline: !!state.exhibitionOutline,
+        zones: state.exhibitionOutline?.zones?.map(z => `${z.name}(${z.percentage}%)`).join(", ") || '',
+        exhibitsCount: state.exhibitionOutline?.exhibits?.length || 0,
+        interactivesCount: state.exhibitionOutline?.interactivePlan?.length || 0,
         // 空间设计字段
         spatialLayout: !!state.spatialLayout,
         layout: state.spatialLayout?.layout || '',
         visitorRoute: state.spatialLayout?.visitorRoute?.join(" → ") || '',
-        zones: state.spatialLayout?.zones?.map(z => `${z.name}(${z.area}㎡)`).join(", ") || '',
+        spatialZones: state.spatialLayout?.zones?.map(z => `${z.name}(${z.area}㎡)`).join(", ") || '',
         // 视觉设计字段
         visualDesign: !!state.visualDesign,
         colorScheme: state.visualDesign?.colorScheme?.join(", ") || '',
@@ -349,6 +402,7 @@ ${state.budgetEstimate.recommendations.map(r => `  - ${r}`).join("\n")}
     return {
       overallScore: 0.7,
       conceptScore: state.conceptPlan ? 0.7 : 0,
+      outlineScore: state.exhibitionOutline ? 0.7 : 0,
       spatialScore: state.spatialLayout ? 0.7 : 0,
       visualScore: state.visualDesign ? 0.7 : 0,
       interactiveScore: state.interactiveSolution ? 0.7 : 0,

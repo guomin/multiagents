@@ -33,6 +33,76 @@ export const ConceptPlanSchema = z.object({
 
 export type ConceptPlan = z.infer<typeof ConceptPlanSchema>;
 
+// 展览大纲细化类型（新增）
+export const ExhibitionOutlineSchema = z.object({
+  // 引用策划方案
+  conceptPlan: ConceptPlanSchema,
+
+  // 展区划分（详细）
+  zones: z.array(z.object({
+    id: z.string().describe("展区ID（如zone-1, zone-2）"),
+    name: z.string().describe("展区名称"),
+    area: z.number().describe("展区面积（平方米）"),
+    percentage: z.number().describe("占总面积百分比（0-100）"),
+    function: z.string().describe("功能描述"),
+    exhibitIds: z.array(z.string()).describe("包含的展品ID列表"),
+    interactiveIds: z.array(z.string()).describe("包含的互动装置ID列表"),
+    budgetAllocation: z.number().describe("预算分配（元）")
+  })).describe("展区划分"),
+
+  // 展品清单（详细）
+  exhibits: z.array(z.object({
+    id: z.string().describe("展品ID（如ex-1, ex-2）"),
+    name: z.string().describe("展品名称"),
+    zoneId: z.string().describe("所属展区ID"),
+    type: z.string().describe("展品类型（文物/复制品/艺术品/模型等）"),
+    protectionLevel: z.string().describe("保护等级（普通/二级/一级）"),
+    showcaseRequirement: z.string().describe("展柜要求"),
+    dimensions: z.object({
+      length: z.number().describe("长度（米）"),
+      width: z.number().describe("宽度（米）"),
+      height: z.number().describe("高度（米）")
+    }).optional().describe("展品尺寸"),
+    insurance: z.number().describe("保险费用（元）"),
+    transportCost: z.number().describe("运输费用（元）")
+  })).describe("展品清单"),
+
+  // 互动装置规划
+  interactivePlan: z.array(z.object({
+    id: z.string().describe("互动装置ID（如int-1, int-2）"),
+    name: z.string().describe("装置名称"),
+    zoneId: z.string().describe("放置展区ID"),
+    type: z.string().describe("装置类型（AR/VR/触摸屏/投影/传感器等）"),
+    estimatedCost: z.number().describe("预估成本（元）"),
+    priority: z.enum(["high", "medium", "low"]).describe("优先级"),
+    description: z.string().describe("功能描述")
+  })).describe("互动装置规划"),
+
+  // 预算框架
+  budgetAllocation: z.object({
+    total: z.number().describe("总预算"),
+    breakdown: z.array(z.object({
+      category: z.string().describe("类别（按展区或功能）"),
+      amount: z.number().describe("金额"),
+      subCategories: z.array(z.object({
+        name: z.string().describe("子类别名称"),
+        amount: z.number().describe("金额")
+      })).optional().describe("子类别明细")
+    })).describe("预算明细")
+  }).describe("预算分配框架"),
+
+  // 空间约束
+  spaceConstraints: z.object({
+    totalArea: z.number().describe("总面积"),
+    minZoneCount: z.number().describe("最少展区数量"),
+    maxZoneCount: z.number().describe("最多展区数量"),
+    minAisleWidth: z.number().describe("最小通道宽度（米）"),
+    mainZoneRatio: z.number().describe("主展区占比（0-1）")
+  }).describe("空间设计约束")
+});
+
+export type ExhibitionOutline = z.infer<typeof ExhibitionOutlineSchema>;
+
 export const SpatialLayoutSchema = z.object({
   layout: z.string().describe("空间布局描述"),
   visitorRoute: z.array(z.string()).describe("参观路线"),
@@ -102,6 +172,7 @@ export type BudgetEstimate = z.infer<typeof BudgetEstimateSchema>;
 export const QualityEvaluationSchema = z.object({
   overallScore: z.number().describe("总体质量分数(0-1)"),
   conceptScore: z.number().describe("概念策划分数(0-1)"),
+  outlineScore: z.number().describe("大纲细化分数(0-1)"),
   spatialScore: z.number().describe("空间设计分数(0-1)"),
   visualScore: z.number().describe("视觉设计分数(0-1)"),
   interactiveScore: z.number().describe("互动技术分数(0-1)"),
@@ -110,6 +181,7 @@ export const QualityEvaluationSchema = z.object({
   revisionTarget: z.enum([
     'none',
     'curator',
+    'outline',
     'spatial_designer',
     'parallel_designs',
     'visual_designer',
@@ -124,6 +196,7 @@ export type QualityEvaluation = z.infer<typeof QualityEvaluationSchema>;
 export const ExhibitionStateSchema = z.object({
   requirements: ExhibitionRequirementSchema,
   conceptPlan: ConceptPlanSchema.optional(),
+  exhibitionOutline: ExhibitionOutlineSchema.optional(), // 新增：展览大纲
   spatialLayout: SpatialLayoutSchema.optional(),
   visualDesign: VisualDesignSchema.optional(),
   interactiveSolution: InteractiveSolutionSchema.optional(),

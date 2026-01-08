@@ -1,6 +1,6 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { ExhibitionRequirement, ConceptPlan, InteractiveSolution, SpatialLayout } from "../types/exhibition";
+import { ExhibitionRequirement, ExhibitionOutline, InteractiveSolution, SpatialLayout } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
 import { getTavilySearchService } from "../services/tavily-search";
 import { promptManager } from "../prompts";
@@ -45,7 +45,7 @@ export class InteractiveTechAgent {
 
   async generateInteractiveSolution(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan,
+    exhibitionOutline: ExhibitionOutline, // 修改：接收ExhibitionOutline
     spatialLayout?: SpatialLayout,
     revisionReason?: string
   ): Promise<InteractiveSolution> {
@@ -58,7 +58,7 @@ export class InteractiveTechAgent {
 
     try {
       // ✅ 输入参数验证
-      this.validateInputs(requirements, conceptPlan);
+      this.validateInputs(requirements, exhibitionOutline);
 
       // 📥 完整记录输入参数
       this.logger.info('📥 [输入参数] 原始需求', {
@@ -71,19 +71,20 @@ export class InteractiveTechAgent {
         revisionReason: revisionReason || "无"
       });
 
-      this.logger.info('📥 [输入参数] 策划方案（来自策划智能体）', {
-        concept: conceptPlan.concept,
-        narrative: conceptPlan.narrative,
-        conceptLength: conceptPlan.concept.length,
-        narrativeLength: conceptPlan.narrative.length
+      this.logger.info('📥 [输入参数] 展览大纲（来自大纲细化智能体）', {
+        concept: exhibitionOutline.conceptPlan.concept,
+        narrative: exhibitionOutline.conceptPlan.narrative,
+        zonesCount: exhibitionOutline.zones.length,
+        exhibitsCount: exhibitionOutline.exhibits.length,
+        interactivePlanCount: exhibitionOutline.interactivePlan.length
       });
 
       this.logger.info('📥 [输入详情] 完整需求对象', {
         fullRequirements: JSON.stringify(requirements, null, 2)
       });
 
-      this.logger.info('📥 [输入详情] 完整策划对象', {
-        fullConceptPlan: JSON.stringify(conceptPlan, null, 2)
+      this.logger.info('📥 [输入详情] 完整大纲对象', {
+        fullOutline: JSON.stringify(exhibitionOutline, null, 2)
       });
 
       this.logger.info('📥 [输入参数] 空间布局（来自空间智能体）', {
@@ -95,7 +96,7 @@ export class InteractiveTechAgent {
 
       // 🔍 智能调研（使用Tavily搜索）
       this.logger.info('🔍 [智能调研] 准备外部知识调研');
-      const researchContext = await this.performResearch(conceptPlan);
+      const researchContext = await this.performResearch(exhibitionOutline.conceptPlan);
 
       // 使用 PromptManager 渲染 prompt
       const rendered = promptManager.render(
@@ -112,16 +113,20 @@ export class InteractiveTechAgent {
           budget: requirements.budget.total,
           currency: requirements.budget.currency,
           // 策展方案
-          concept: conceptPlan.concept,
-          narrative: conceptPlan.narrative,
+          concept: exhibitionOutline.conceptPlan.concept,
+          narrative: exhibitionOutline.conceptPlan.narrative,
           // 外部调研
           researchContext,
+          // ⭐ 大纲信息（完整传递）
+          zones: exhibitionOutline.zones.map(z =>
+            `${z.name}（${z.area}㎡，功能：${z.function}）`
+          ).join("；"),
+          interactivePlan: exhibitionOutline.interactivePlan.map(ip =>
+            `${ip.name}（类型：${ip.type}，优先级：${ip.priority}，预估成本：${ip.estimatedCost}元，位置：${ip.zoneId}，描述：${ip.description}）`
+          ).join("；"),
           // 空间布局信息
           layout: spatialLayout?.layout || "",
           visitorRoute: spatialLayout?.visitorRoute.join(" → ") || "",
-          zones: spatialLayout?.zones.map(z =>
-            `${z.name}（${z.area}㎡，功能：${z.function}）`
-          ).join("；") || "",
           accessibility: spatialLayout?.accessibility || ""
         }
       );
@@ -221,21 +226,25 @@ export class InteractiveTechAgent {
   /**
    * ✅ 输入参数验证
    */
-  private validateInputs(requirements: ExhibitionRequirement, conceptPlan: ConceptPlan): void {
+  private validateInputs(requirements: ExhibitionRequirement, exhibitionOutline: ExhibitionOutline): void {
     if (!requirements) {
       throw new Error("requirements 参数不能为空");
     }
 
-    if (!conceptPlan) {
-      throw new Error("conceptPlan 参数不能为空");
+    if (!exhibitionOutline) {
+      throw new Error("exhibitionOutline 参数不能为空");
     }
 
-    if (!conceptPlan.concept || conceptPlan.concept.trim().length === 0) {
-      throw new Error("conceptPlan.concept 不能为空");
+    if (!exhibitionOutline.conceptPlan) {
+      throw new Error("exhibitionOutline.conceptPlan 不能为空");
     }
 
-    if (!conceptPlan.narrative || conceptPlan.narrative.trim().length === 0) {
-      this.logger.warn('⚠️ [输入警告] conceptPlan.narrative 为空，可能影响生成质量');
+    if (!exhibitionOutline.conceptPlan.concept || exhibitionOutline.conceptPlan.concept.trim().length === 0) {
+      throw new Error("exhibitionOutline.conceptPlan.concept 不能为空");
+    }
+
+    if (!exhibitionOutline.conceptPlan.narrative || exhibitionOutline.conceptPlan.narrative.trim().length === 0) {
+      this.logger.warn('⚠️ [输入警告] exhibitionOutline.conceptPlan.narrative 为空，可能影响生成质量');
     }
   }
 

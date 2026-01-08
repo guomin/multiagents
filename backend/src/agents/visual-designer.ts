@@ -1,6 +1,6 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { ExhibitionRequirement, ConceptPlan, VisualDesign, SpatialLayout } from "../types/exhibition";
+import { ExhibitionRequirement, ExhibitionOutline, VisualDesign, SpatialLayout } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
 import { promptManager } from "../prompts";
 import { createLogger } from "../utils/logger";
@@ -38,7 +38,7 @@ export class VisualDesignerAgent {
 
   async generateVisualDesign(
     requirements: ExhibitionRequirement,
-    conceptPlan: ConceptPlan,
+    exhibitionOutline: ExhibitionOutline, // 修改：接收ExhibitionOutline
     spatialLayout?: SpatialLayout,
     revisionReason?: string
   ): Promise<VisualDesign> {
@@ -51,7 +51,7 @@ export class VisualDesignerAgent {
 
     try {
       // ✅ 输入参数验证
-      this.validateInputs(requirements, conceptPlan);
+      this.validateInputs(requirements, exhibitionOutline);
 
       // 📥 完整记录输入参数
       this.logger.info('📥 [输入参数] 原始需求', {
@@ -62,19 +62,20 @@ export class VisualDesignerAgent {
         revisionReason: revisionReason || "无"
       });
 
-      this.logger.info('📥 [输入参数] 策划方案（来自策划智能体）', {
-        concept: conceptPlan.concept,
-        narrative: conceptPlan.narrative,
-        conceptLength: conceptPlan.concept.length,
-        narrativeLength: conceptPlan.narrative.length
+      this.logger.info('📥 [输入参数] 展览大纲（来自大纲细化智能体）', {
+        concept: exhibitionOutline.conceptPlan.concept,
+        narrative: exhibitionOutline.conceptPlan.narrative,
+        zonesCount: exhibitionOutline.zones.length,
+        exhibitsCount: exhibitionOutline.exhibits.length,
+        hasSpatialLayout: !!spatialLayout
       });
 
       this.logger.info('📥 [输入详情] 完整需求对象', {
         fullRequirements: JSON.stringify(requirements, null, 2)
       });
 
-      this.logger.info('📥 [输入详情] 完整策划对象', {
-        fullConceptPlan: JSON.stringify(conceptPlan, null, 2)
+      this.logger.info('📥 [输入详情] 完整大纲对象', {
+        fullOutline: JSON.stringify(exhibitionOutline, null, 2)
       });
 
       this.logger.info('📥 [输入参数] 空间布局（来自空间智能体）', {
@@ -93,12 +94,19 @@ export class VisualDesignerAgent {
           title: requirements.title,
           theme: requirements.theme,
           targetAudience: requirements.targetAudience,
-          concept: conceptPlan.concept,
-          narrative: conceptPlan.narrative,
-          // 空间布局信息
+          concept: exhibitionOutline.conceptPlan.concept,
+          narrative: exhibitionOutline.conceptPlan.narrative,
+          // ⭐ 大纲信息（完整传递）
+          zones: exhibitionOutline.zones.map(z =>
+            `${z.name}（${z.area}㎡，占比${z.percentage}%，功能：${z.function}）`
+          ).join("；"),
+          exhibits: exhibitionOutline.exhibits.map(e =>
+            `${e.name}（${e.type}，保护等级：${e.protectionLevel}）`
+          ).join("；"),
+          // 空间布局信息（如果可用）
           layout: spatialLayout?.layout || "",
           visitorRoute: spatialLayout?.visitorRoute.join(" → ") || "",
-          zones: spatialLayout?.zones.map(z =>
+          spatialZones: spatialLayout?.zones.map(z =>
             `${z.name}（${z.area}㎡，功能：${z.function}）`
           ).join("；") || ""
         }
@@ -199,21 +207,25 @@ export class VisualDesignerAgent {
   /**
    * ✅ 输入参数验证
    */
-  private validateInputs(requirements: ExhibitionRequirement, conceptPlan: ConceptPlan): void {
+  private validateInputs(requirements: ExhibitionRequirement, exhibitionOutline: ExhibitionOutline): void {
     if (!requirements) {
       throw new Error("requirements 参数不能为空");
     }
 
-    if (!conceptPlan) {
-      throw new Error("conceptPlan 参数不能为空");
+    if (!exhibitionOutline) {
+      throw new Error("exhibitionOutline 参数不能为空");
     }
 
-    if (!conceptPlan.concept || conceptPlan.concept.trim().length === 0) {
-      throw new Error("conceptPlan.concept 不能为空");
+    if (!exhibitionOutline.conceptPlan) {
+      throw new Error("exhibitionOutline.conceptPlan 不能为空");
     }
 
-    if (!conceptPlan.narrative || conceptPlan.narrative.trim().length === 0) {
-      this.logger.warn('⚠️ [输入警告] conceptPlan.narrative 为空，可能影响生成质量');
+    if (!exhibitionOutline.conceptPlan.concept || exhibitionOutline.conceptPlan.concept.trim().length === 0) {
+      throw new Error("exhibitionOutline.conceptPlan.concept 不能为空");
+    }
+
+    if (!exhibitionOutline.conceptPlan.narrative || exhibitionOutline.conceptPlan.narrative.trim().length === 0) {
+      this.logger.warn('⚠️ [输入警告] exhibitionOutline.conceptPlan.narrative 为空，可能影响生成质量');
     }
   }
 

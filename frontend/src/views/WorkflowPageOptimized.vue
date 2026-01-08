@@ -464,11 +464,19 @@ const backendWorkflowNodes = [
     description: '概念策划和叙事结构'
   },
   {
+    id: 'outline',
+    name: '大纲细化智能体',
+    type: 'single',
+    category: 'design',
+    order: 2,
+    description: '详细大纲策划和内容框架'
+  },
+  {
     id: 'spatial_designer',
     name: '空间设计智能体',
     type: 'single',
     category: 'design',
-    order: 2,
+    order: 3,
     description: '空间规划和布局设计'
   },
   {
@@ -476,7 +484,7 @@ const backendWorkflowNodes = [
     name: '并行设计',
     type: 'parallel',
     category: 'design',
-    order: 3,
+    order: 4,
     description: '视觉设计和互动技术并行执行',
     members: ['visual_designer', 'interactive_tech']
   },
@@ -504,7 +512,7 @@ const backendWorkflowNodes = [
     name: '预算控制智能体',
     type: 'single',
     category: 'control',
-    order: 4,
+    order: 5,
     description: '预算评估和成本控制'
   },
   {
@@ -512,7 +520,7 @@ const backendWorkflowNodes = [
     name: '主管审核',
     type: 'review',
     category: 'review',
-    order: 5,
+    order: 6,
     description: '质量评估和人工审核'
   },
   {
@@ -520,7 +528,7 @@ const backendWorkflowNodes = [
     name: '人工决策',
     type: 'decision',
     category: 'human',
-    order: 6,
+    order: 7,
     description: '人工审核决策（批准/修订）'
   },
   {
@@ -528,7 +536,7 @@ const backendWorkflowNodes = [
     name: '生成报告',
     type: 'final',
     category: 'output',
-    order: 7,
+    order: 8,
     description: '生成最终设计报告'
   }
 ]
@@ -538,6 +546,7 @@ const backendWorkflowNodes = [
 // 前端使用完整的节点 ID（spatial_designer, visual_designer, etc.）
 const agentIdMapping: Record<string, string> = {
   'curator': 'curator',
+  'outline': 'outline',
   'spatial': 'spatial_designer',
   'visual': 'visual_designer',
   'interactive': 'interactive_tech',

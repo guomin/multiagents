@@ -71,21 +71,42 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
 
 【评估维度（每个维度0-1分）】
 1. 概念策划（conceptScore）：创意性、主题契合度、叙事逻辑、场景适配性
-2. 空间设计（spatialScore）：布局合理性、动线流畅度、功能完整性、人体工程学
-3. 视觉设计（visualScore）：美学价值、品牌一致性、可实施性、场景契合度
-4. 互动技术（interactiveScore）：技术可行性、用户体验、创新性、场景适配性
-5. 预算合理性（budgetScore）：成本控制、性价比、风险控制、分配合理性
+2. 大纲细化（outlineScore）：展区划分科学性、展品分配合理性、内容框架完整性、预算框架科学性
+3. 空间设计（spatialScore）：布局合理性、动线流畅度、功能完整性、人体工程学
+4. 视觉设计（visualScore）：美学价值、品牌一致性、可实施性、场景契合度
+5. 互动技术（interactiveScore）：技术可行性、用户体验、创新性、场景适配性
+6. 预算合理性（budgetScore）：成本控制、性价比、风险控制、分配合理性
+
+【总体质量分数计算方法】
+overallScore 采用加权平均计算，权重分配如下：
+- conceptScore：25%（概念策划是核心基础）
+- outlineScore：20%（大纲细化是连接概念与执行的关键）
+- spatialScore：20%（空间设计直接影响参观体验）
+- visualScore：15%（视觉设计营造氛围和品牌识别）
+- interactiveScore：15%（互动技术增强体验和教育价值）
+- budgetScore：5%（预算合理性作为参考，权重较低）
+
+计算公式：overallScore = conceptScore × 0.25 + outlineScore × 0.20 + spatialScore × 0.20 + visualScore × 0.15 + interactiveScore × 0.15 + budgetScore × 0.05
+
+【预算评估特别说明】
+由于预算数据可能存在格式不完整、范围估算或单位转换等问题：
+- 评估 budgetScore 时应优先关注预算分配的**合理性逻辑**和**结构完整性**
+- 而非数字的**精确性**
+- 只要预算明细结构合理、分类清晰、建议具有参考价值，应给予 0.6 以上分数
+- 只有在明显超支、分配严重不合理或完全缺失预算分析时才给予 0.5 以下分数
+- 预算数据的格式问题不应大幅影响整体评分（因其权重仅5%）
 
 输出格式（JSON）：
 {
   "overallScore": 0.85,
   "conceptScore": 0.9,
+  "outlineScore": 0.85,
   "spatialScore": 0.8,
   "visualScore": 0.85,
   "interactiveScore": 0.8,
   "budgetScore": 0.85,
   "feedback": "总体评价（需包含各维度的具体评价和改进建议，200-300字）",
-  "revisionTarget": "none" | "curator" | "spatial_designer" | "visual_designer" | "interactive_tech" | "budget_controller"
+  "revisionTarget": "none" | "curator" | "outline" | "spatial_designer" | "visual_designer" | "interactive_tech" | "budget_controller"
 }
 
 评估标准：
@@ -114,15 +135,22 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
    - 观众动线：{{visitorFlow}}
 {{else}}❌ 概念策划未完成{{/if}}
 
+{{#if exhibitionOutline}}
+2. 大纲细化：
+   - 展区划分：{{zones}}
+   - 展品数量：{{exhibitsCount}} 件
+   - 互动装置：{{interactivesCount}} 个
+{{else}}❌ 大纲细化未完成{{/if}}
+
 {{#if spatialLayout}}
-2. 空间设计：
-   - 布局：{{spatialLayoutDesc}}
+3. 空间设计：
+   - 布局：{{layout}}
    - 参观路线：{{visitorRoute}}
-   - 功能区域：{{zones}}
+   - 功能区域：{{spatialZones}}
 {{else}}❌ 空间设计未完成{{/if}}
 
 {{#if visualDesign}}
-3. 视觉设计：
+4. 视觉设计：
    - 色彩方案：{{colorScheme}}
    - 字体设计：{{typography}}
    - 品牌元素：{{brandElements}}
@@ -130,13 +158,13 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
 {{else}}❌ 视觉设计未完成{{/if}}
 
 {{#if interactiveSolution}}
-4. 互动技术：
+5. 互动技术：
    - 使用技术：{{technologies}}
    - 互动装置：{{interactives}}
 {{else}}❌ 互动技术方案未完成{{/if}}
 
 {{#if budgetEstimate}}
-5. 预算估算：
+6. 预算估算：
    - 总成本：{{totalCost}} {{currency}}
    - 预算明细：{{breakdown}}
    - 优化建议：{{recommendations}}
@@ -179,13 +207,14 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
 
 2. **设计方案详细说明**
    - 2.1 概念策划方案（核心概念、叙事结构、重点展品、参观流线）
-   - 2.2 空间设计方案（布局方案、参观路线、功能区域、无障碍设计）
-   - 2.3 视觉设计方案（色彩方案、字体设计、品牌元素、视觉风格）
-   - 2.4 互动技术方案（使用技术、互动装置、技术要求）
-   - 2.5 预算估算方案（总成本、预算明细、优化建议）
+   - 2.2 大纲细化方案（展区划分、展品清单、互动装置规划、预算框架、空间约束）
+   - 2.3 空间设计方案（布局方案、参观路线、功能区域、无障碍设计）
+   - 2.4 视觉设计方案（色彩方案、字体设计、品牌元素、视觉风格）
+   - 2.5 互动技术方案（使用技术、互动装置、技术要求）
+   - 2.6 预算估算方案（总成本、预算明细、优化建议）
 
 3. **项目完成度统计**
-   - 各阶段完成情况
+   - 各阶段完成情况（6个阶段：概念策划、大纲细化、空间设计、视觉设计、互动技术、预算估算）
    - 迭代次数说明
    - 质量评估结果
 
@@ -208,6 +237,22 @@ export const SUPERVISOR_PROMPTS: Record<string, PromptTemplate> = {
 - 核心概念：{{concept}}
 - 叙事结构：{{narrative}}
 - 重点展品：{{keyExhibits}}
+{{/if}}
+
+{{#if exhibitionOutline}}
+- 展区划分：
+{{outlineZones}}
+
+- 展品清单（共{{outlineExhibitsCount}}件）：
+{{outlineExhibits}}
+
+- 互动装置规划（共{{outlineInteractiveCount}}个）：
+{{outlineInteractive}}
+
+- 预算框架：总计 ¥{{outlineBudgetTotal}}
+{{outlineBudgetBreakdown}}
+
+- 空间约束：总面积 {{outlineSpaceTotal}}㎡，展区数量 {{outlineSpaceZones}}
 {{/if}}
 
 {{#if spatialLayout}}

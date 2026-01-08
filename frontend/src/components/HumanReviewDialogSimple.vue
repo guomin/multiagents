@@ -193,6 +193,13 @@ const revisionTargetOptions = computed(() => {
       reason: '概念策划需要优化'
     },
     {
+      id: 'outline',
+      name: '大纲细化',
+      score: (evalData.outlineScore * 100).toFixed(0),
+      recommended: evalData.revisionTarget === 'outline',
+      reason: '详细大纲需要优化'
+    },
+    {
       id: 'spatial_designer',
       name: '空间设计',
       score: (evalData.spatialScore * 100).toFixed(0),
