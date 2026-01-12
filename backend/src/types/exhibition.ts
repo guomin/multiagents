@@ -132,11 +132,45 @@ export const InteractiveSolutionSchema = z.object({
     description: z.string(),
     type: z.string(),
     cost: z.union([z.number(), z.string()]).optional().transform(val => {
-      if (typeof val === 'string') {
-        const num = parseFloat(val.replace(/[,，]/g, ''));
-        return isNaN(num) ? 0 : num;
+      // 已经是数字，直接返回
+      if (typeof val === 'number' && !isNaN(val)) {
+        return val;
       }
-      return val;
+
+      // 字符串转换
+      if (typeof val === 'string') {
+        // 移除所有非数字字符（保留小数点和数字）
+        let cleaned = val
+          .replace(/[万元千万]/g, '') // 移除中文单位
+          .replace(/[-~～至到]\s*/g, ' ') // 处理区间值
+          .trim();
+
+        // 如果包含区间，取中间值或平均值
+        const parts = cleaned.split(/\s+/).filter(p => p);
+        if (parts.length >= 2) {
+          const nums = parts.map(p => parseFloat(p)).filter(n => !isNaN(n));
+          if (nums.length >= 2) {
+            return (nums[0] + nums[1]) / 2; // 取平均值
+          }
+        }
+
+        // 提取第一个有效数字
+        const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+        if (match) {
+          let num = parseFloat(match[1]);
+
+          // 处理"万元"单位
+          if (val.includes('万')) {
+            num *= 10000;
+          }
+
+          return num;
+        }
+
+        return 0;
+      }
+
+      return 0;
     })
   })).describe("互动装置"),
   technicalRequirements: z.string().describe("技术要求")
@@ -148,20 +182,88 @@ export const BudgetEstimateSchema = z.object({
   breakdown: z.array(z.object({
     category: z.string(),
     amount: z.union([z.number(), z.string()]).transform(val => {
-      if (typeof val === 'string') {
-        const num = parseFloat(val.replace(/[,，]/g, ''));
-        return isNaN(num) ? 0 : num;
+      // 已经是数字，直接返回
+      if (typeof val === 'number' && !isNaN(val)) {
+        return val;
       }
-      return val;
+
+      // 字符串转换
+      if (typeof val === 'string') {
+        // 移除所有非数字字符（保留小数点和数字）
+        let cleaned = val
+          .replace(/[万元千万]/g, '') // 移除中文单位
+          .replace(/[-~～至到]\s*/g, ' ') // 处理区间值
+          .trim();
+
+        // 如果包含区间，取中间值或平均值
+        const parts = cleaned.split(/\s+/).filter(p => p);
+        if (parts.length >= 2) {
+          const nums = parts.map(p => parseFloat(p)).filter(n => !isNaN(n));
+          if (nums.length >= 2) {
+            return (nums[0] + nums[1]) / 2; // 取平均值
+          }
+        }
+
+        // 提取第一个有效数字
+        const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+        if (match) {
+          let num = parseFloat(match[1]);
+
+          // 处理"万元"单位
+          if (val.includes('万')) {
+            num *= 10000;
+          }
+
+          return num;
+        }
+
+        return 0;
+      }
+
+      return 0;
     }),
     description: z.string()
   })).describe("预算明细"),
   totalCost: z.union([z.number(), z.string()]).transform(val => {
-    if (typeof val === 'string') {
-      const num = parseFloat(val.replace(/[,，]/g, ''));
-      return isNaN(num) ? 0 : num;
+    // 已经是数字，直接返回
+    if (typeof val === 'number' && !isNaN(val)) {
+      return val;
     }
-    return val;
+
+    // 字符串转换
+    if (typeof val === 'string') {
+      // 移除所有非数字字符（保留小数点和数字）
+      let cleaned = val
+        .replace(/[万元千万]/g, '') // 移除中文单位
+        .replace(/[-~～至到]\s*/g, ' ') // 处理区间值
+        .trim();
+
+      // 如果包含区间，取中间值或平均值
+      const parts = cleaned.split(/\s+/).filter(p => p);
+      if (parts.length >= 2) {
+        const nums = parts.map(p => parseFloat(p)).filter(n => !isNaN(n));
+        if (nums.length >= 2) {
+          return (nums[0] + nums[1]) / 2; // 取平均值
+        }
+      }
+
+      // 提取第一个有效数字
+      const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+      if (match) {
+        let num = parseFloat(match[1]);
+
+        // 处理"万元"单位
+        if (val.includes('万')) {
+          num *= 10000;
+        }
+
+        return num;
+      }
+
+      return 0;
+    }
+
+    return 0;
   }).describe("总成本"),
   recommendations: z.array(z.string()).describe("优化建议")
 });

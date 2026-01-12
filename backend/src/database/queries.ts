@@ -170,6 +170,17 @@ export const workflowQueries = {
     stmt.run(currentStep, progress, id)
   },
 
+  // 更新工作流状态
+  updateStatus(id: string, status: string): void {
+    const stmt = db.prepare(`
+      UPDATE workflows
+      SET status = ?
+      WHERE id = ?
+    `)
+    stmt.run(status, id)
+    log('💾 数据库', `🔄 工作流状态更新`, { id, status })
+  },
+
   // 完成工作流
   complete(id: string): void {
     const stmt = db.prepare(`

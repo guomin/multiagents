@@ -55,7 +55,8 @@ export interface AgentGroup {
 export interface ExhibitionState {
   requirements: ExhibitionRequirement;
   conceptPlan?: ConceptPlan;
-  exhibitionOutline?: ExhibitionOutline; // 新增：展览大纲
+  detailedOutline?: ExhibitionOutline; // 详细大纲（outline 智能体生成，使用 ExhibitionOutline 类型）
+  exhibitionOutline?: ExhibitionOutline; // 展览大纲（旧字段，保留兼容性）
   spatialLayout?: SpatialLayout;
   visualDesign?: VisualDesign;
   interactiveSolution?: InteractiveSolution;

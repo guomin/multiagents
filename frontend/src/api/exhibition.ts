@@ -99,10 +99,10 @@ export const exhibitionAPI = {
   },
 
   // 导出报告
-  async exportReport(id: string, format: 'pdf' | 'docx' | 'markdown'): Promise<Blob> {
+  async exportReport(id: string, format: 'pdf' | 'docx' | 'markdown', forceRegenerate: boolean = false): Promise<Blob> {
     try {
       const response = await api.get(`/exhibition/export/${id}`, {
-        params: { format },
+        params: { format, force: forceRegenerate ? 'true' : 'false' },
         responseType: 'blob',
         timeout: 120000 // 2分钟超时（PDF生成可能需要较长时间）
       })
@@ -174,6 +174,27 @@ export const exhibitionAPI = {
     } catch (error) {
       console.error('Failed to get project workflows:', error)
       throw error
+    }
+  },
+
+  // ============ 智能体结果 API ============
+
+  // 获取指定智能体的执行结果
+  async getAgentResult(projectId: string, agentType: string): Promise<any> {
+    try {
+      const response = await api.get(`/exhibition/agent-result/${projectId}/${agentType}`)
+      return response.data
+    } catch (error: any) {
+      console.error('Failed to get agent result:', error)
+
+      // 提供更详细的错误信息
+      if (error.response?.status === 404) {
+        throw new Error('智能体结果未找到，可能尚未完成执行')
+      } else if (error.response?.status === 400) {
+        throw new Error(`不支持的智能体类型: ${agentType}`)
+      } else {
+        throw new Error(error.response?.data?.details || '获取智能体结果失败')
+      }
     }
   }
 }
