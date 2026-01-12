@@ -72,7 +72,7 @@ router.get('/model-config', (req, res) => {
 // 运行展览设计
 router.post('/exhibition/run', async (req, res) => {
   const startTime = Date.now()
-  const projectId = `project_${Date.now()}`
+  let projectId = ''  // 在try块外定义，以便在catch块中访问
 
   try {
     const requirements: ExhibitionRequirement = req.body
@@ -81,12 +81,46 @@ router.post('/exhibition/run', async (req, res) => {
 
     logger.info('📨 收到展览设计请求', {
       requestId: req.id,
-      projectId,
       title: requirements.title,
       theme: requirements.theme.substring(0, 50) + '...',
       budget: `${requirements.budget?.total} ${requirements.budget?.currency}`,
       maxIterations
     })
+
+    // 🔑 关键修改：先同步创建项目和数据库记录，获取真实的UUID
+    const dbProject = projectQueries.create({
+      title: requirements.title,
+      theme: requirements.theme,
+      target_audience: requirements.targetAudience || '',
+      venue_area: requirements.venueSpace?.area || 0,
+      venue_height: requirements.venueSpace?.height || 0,
+      venue_layout: requirements.venueSpace?.layout || '',
+      budget_total: requirements.budget?.total || 0,
+      budget_currency: requirements.budget?.currency || 'CNY',
+      start_date: requirements.duration?.startDate || '',
+      end_date: requirements.duration?.endDate || '',
+      special_requirements: JSON.stringify(requirements.specialRequirements || []),
+      status: 'pending'  // 初始状态为pending，启动后改为running
+    })
+
+    logger.info('项目已保存到数据库', { projectId: dbProject.id })
+    console.log('✅ [API] 项目已创建，ID:', dbProject.id)
+
+    // 创建工作流记录
+    const dbWorkflow = workflowQueries.create({
+      project_id: dbProject.id,
+      current_step: '初始化',
+      progress: 0,
+      status: 'running',  // 工作流没有pending状态，直接用running
+      completed_at: null,
+      error_message: null
+    })
+
+    logger.info('工作流已创建', { workflowId: dbWorkflow.id })
+    console.log('✅ [API] 工作流已创建，ID:', dbWorkflow.id)
+
+    // 使用数据库生成的UUID作为projectId
+    projectId = dbProject.id  // 赋值而不是重新声明
 
     // 记录工作流开始
     console.log('✅ [API] 工作流已记录开始')
@@ -141,8 +175,15 @@ router.post('/exhibition/run', async (req, res) => {
     console.log('📞 [API] 准备调用 runExhibitionAsync...')
     console.log('🤖 [API] 自动模式:', autoApprove)
 
-    // 异步运行多智能体系统
-    runExhibitionAsync(requirements, maxIterations, projectId, req.id || 'unknown', autoApprove)
+    // 🔑 修改：传递项目和工作的ID给异步函数
+    runExhibitionAsync(
+      requirements,
+      maxIterations,
+      projectId,
+      dbWorkflow.id,  // 传递工作流ID
+      req.id || 'unknown',
+      autoApprove
+    )
 
     console.log('✅ [API] runExhibitionAsync 已调用（异步）')
 
@@ -178,6 +219,7 @@ async function runExhibitionAsync(
   requirements: ExhibitionRequirement,
   maxIterations: number,
   projectId: string,
+  workflowId: string,  // 🔑 新增：接受已创建的工作流ID
   requestId: string,
   autoApprove: boolean = true  // 新增参数：是否自动批准
 ) {
@@ -187,49 +229,39 @@ async function runExhibitionAsync(
 
   console.log('🚀 [ASYNC] runExhibitionAsync 函数已调用')
   console.log('📋 [ASYNC] 项目ID:', projectId)
+  console.log('📋 [ASYNC] 工作流ID:', workflowId)
   console.log('📋 [ASYNC] 请求ID:', requestId)
   console.log('🔄 [ASYNC] 最大迭代次数:', maxIterations)
-  console.log('🤖 [ASYNC] 自动模式:', autoApprove)  // 新增日志
+  console.log('🤖 [ASYNC] 自动模式:', autoApprove)
 
   try {
-    logger.info('🚀 开始运行多智能体图系统', { projectId, requestId })
+    logger.info('🚀 开始运行多智能体图系统', { projectId, workflowId, requestId })
     console.log('✅ [ASYNC] 已进入 try 块')
 
-    // 1. 保存项目到数据库
-    dbProject = projectQueries.create({
-      title: requirements.title,
-      theme: requirements.theme,
-      target_audience: requirements.targetAudience || '',
-      venue_area: requirements.venueSpace?.area || 0,
-      venue_height: requirements.venueSpace?.height || 0,
-      venue_layout: requirements.venueSpace?.layout || '',
-      budget_total: requirements.budget?.total || 0,
-      budget_currency: requirements.budget?.currency || 'CNY',
-      start_date: requirements.duration?.startDate || '',
-      end_date: requirements.duration?.endDate || '',
-      special_requirements: JSON.stringify(requirements.specialRequirements || []),
-      status: 'running'
-    })
+    // 🔑 修改：获取已创建的项目和工作流记录
+    dbProject = projectQueries.getById(projectId)
+    if (!dbProject) {
+      throw new Error(`项目不存在: ${projectId}`)
+    }
 
-    logger.info('项目已保存到数据库', { projectId: dbProject.id })
-    console.log('✅ [ASYNC] 项目已保存到数据库, ID:', dbProject.id)
+    dbWorkflow = workflowQueries.getById(workflowId)
+    if (!dbWorkflow) {
+      throw new Error(`工作流不存在: ${workflowId}`)
+    }
 
-    // 2. 创建工作流记录
-    dbWorkflow = workflowQueries.create({
-      project_id: dbProject.id,
-      current_step: '开始项目',
-      progress: 0,
-      status: 'running',
-      completed_at: null,
-      error_message: null
-    })
+    console.log('✅ [ASYNC] 已获取项目和记录')
+    console.log('📋 [ASYNC] 项目ID:', dbProject.id)
+    console.log('📋 [ASYNC] 工作流ID:', dbWorkflow.id)
 
-    logger.info('工作流已创建', { workflowId: dbWorkflow.id })
-    console.log('✅ [ASYNC] 工作流已创建, ID:', dbWorkflow.id)
+    // 更新项目状态为running
+    projectQueries.updateStatus(projectId, 'running')
+    workflowQueries.updateStatus(workflowId, 'running')
+
+    console.log('✅ [ASYNC] 项目和工作流状态已更新为running')
 
     // 广播开始状态
     broadcastProgress(0, '开始项目')
-    workflowQueries.updateProgress(dbWorkflow.id, '开始项目', 0)
+    workflowQueries.updateProgress(workflowId, '开始项目', 0)
 
     console.log('🤖 [ASYNC] 开始创建智能体执行记录...')
 
@@ -424,16 +456,158 @@ router.delete('/exhibition/workflow/:id', (req, res) => {
   }
 })
 
+// 获取智能体执行结果
+router.get('/exhibition/agent-result/:projectId/:agentType', async (req, res) => {
+  const startTime = Date.now()
+
+  try {
+    const { projectId, agentType } = req.params
+
+    logger.info('获取智能体结果请求', {
+      requestId: req.id,
+      projectId,
+      agentType
+    })
+
+    // 智能体类型到结果类型的映射
+    const agentTypeToResultType: Record<string, string> = {
+      'curator': 'concept',
+      'outline': 'outline',
+      'spatial_designer': 'spatial',
+      'visual_designer': 'visual',
+      'interactive_tech': 'interactive',
+      'budget_controller': 'budget',
+      'supervisor': 'report'
+    }
+
+    const resultType = agentTypeToResultType[agentType]
+
+    if (!resultType) {
+      logger.warn('未知的智能体类型', { agentType })
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+      return res.status(400).json({
+        error: 'Unknown agent type',
+        details: `Agent type '${agentType}' is not supported`
+      })
+    }
+
+    // 从数据库查询项目和工作流
+    const project = projectQueries.getById(projectId)
+
+    if (!project) {
+      logger.warn('项目不存在', { projectId })
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+      return res.status(404).json({
+        error: 'Project not found',
+        details: `Project with ID '${projectId}' does not exist`
+      })
+    }
+
+    // 获取该项目的最新工作流
+    const workflows = workflowQueries.getByProjectId(projectId)
+
+    if (!workflows || workflows.length === 0) {
+      logger.warn('工作流不存在', { projectId })
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+      return res.status(404).json({
+        error: 'Workflow not found',
+        details: `No workflow found for project '${projectId}'`
+      })
+    }
+
+    const latestWorkflow = workflows[0]
+
+    // 从 design_results 表查询结果
+    const designResult = designResultQueries.getByType(latestWorkflow.id, resultType)
+
+    if (!designResult) {
+      // 检查工作流状态，提供更详细的错误信息
+      const isWorkflowRunning = latestWorkflow.status === 'running'
+      const isWorkflowPending = latestWorkflow.status === 'pending'
+      const workflowProgress = latestWorkflow.progress || 0
+      const currentStep = latestWorkflow.current_step || 'unknown'
+
+      logger.warn('设计结果未找到', {
+        workflowId: latestWorkflow.id,
+        resultType,
+        workflowStatus: latestWorkflow.status,
+        workflowProgress,
+        currentStep
+      })
+
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+      // 根据工作流状态返回不同的错误信息
+      if (isWorkflowRunning || isWorkflowPending) {
+        return res.status(404).json({
+          error: 'Workflow not completed',
+          details: `工作流正在执行中（进度：${workflowProgress}%，当前步骤：${currentStep}），请等待完成后再查看结果`
+        })
+      }
+
+      return res.status(404).json({
+        error: 'Result not found',
+        details: `智能体 '${agentType}' 的执行结果未找到。该智能体可能尚未执行或执行失败`
+      })
+    }
+
+    // 解析 JSON 数据
+    let resultData
+    try {
+      resultData = JSON.parse(designResult.result_data)
+    } catch (error) {
+      logger.error('解析结果数据失败', {
+        workflowId: latestWorkflow.id,
+        resultType,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+      return res.status(500).json({
+        error: 'Failed to parse result data',
+        details: 'Invalid JSON format in database'
+      })
+    }
+
+    responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+    logger.info('获取智能体结果成功', {
+      projectId,
+      agentType,
+      resultType
+    })
+
+    res.json({
+      success: true,
+      data: {
+        agentType,
+        resultType,
+        resultData,
+        createdAt: designResult.created_at
+      }
+    })
+  } catch (error) {
+    responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+    logger.error('获取智能体结果失败', error as Error)
+    res.status(500).json({
+      error: 'Failed to get agent result',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
 // 导出报告
 router.get('/exhibition/export/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { format = 'markdown' } = req.query
+    const { format = 'markdown', force = 'false' } = req.query
 
-    logger.info('导出报告', { projectId: id, format })
+    const forceRegenerate = force === 'true' || force === '1'
+
+    logger.info('导出报告', { projectId: id, format, forceRegenerate })
 
     // 生成报告内容
-    const reportContent = await generateReport(id, format as string)
+    const reportContent = await generateReport(id, format as string, forceRegenerate)
 
     // 设置响应头
     const filename = `exhibition-report-${id}.${format}`
@@ -451,7 +625,7 @@ router.get('/exhibition/export/:id', async (req, res) => {
       res.send(reportContent)
     }
 
-    logger.info('报告导出成功', { projectId: id, format, contentLength: reportContent?.length || 0 })
+    logger.info('报告导出成功', { projectId: id, format, forceRegenerate, contentLength: reportContent?.length || 0 })
   } catch (error) {
     logger.error('导出报告失败', error as Error)
     res.status(500).json({
@@ -462,7 +636,7 @@ router.get('/exhibition/export/:id', async (req, res) => {
 })
 
 // 生成报告内容
-async function generateReport(id: string, format: string): Promise<string | Buffer> {
+async function generateReport(id: string, format: string, forceRegenerate: boolean = false): Promise<string | Buffer> {
   // 从数据库查询项目数据
   const project = projectQueries.getById(id)
 
@@ -489,7 +663,8 @@ async function generateReport(id: string, format: string): Promise<string | Buff
       type: r.result_type,
       dataSize: r.result_data?.length || 0,
       hasData: !!r.result_data
-    }))
+    })),
+    forceRegenerate
   })
 
   // 查找报告
@@ -497,8 +672,8 @@ async function generateReport(id: string, format: string): Promise<string | Buff
 
   let markdown: string
 
-  if (reportResult) {
-    // 如果数据库中已有报告，直接返回
+  if (reportResult && !forceRegenerate) {
+    // 如果数据库中已有报告，且不是强制重新生成，直接返回
     logger.info('✅ [PDF生成] 从数据库读取已保存的报告', {
       projectId: id,
       workflowId: latestWorkflow.id,
