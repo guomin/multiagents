@@ -1,10 +1,11 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { ExhibitionRequirement, ExhibitionOutline, InteractiveSolution, SpatialLayout } from "../types/exhibition";
+import { ExhibitionRequirement, ExhibitionOutline, InteractiveSolution, SpatialLayout, ConceptPlan } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
 import { getTavilySearchService } from "../services/tavily-search";
 import { promptManager } from "../prompts";
 import { createLogger } from "../utils/logger";
+import { normalizeCost } from "../utils/cost-normalizer";
 
 export class InteractiveTechAgent {
   private llm: ChatOpenAI;
@@ -364,6 +365,24 @@ export class InteractiveTechAgent {
       parsed.interactives = undefined;
     }
 
+    // 🔑 新增：清理和标准化cost字段
+    if (parsed.interactives && Array.isArray(parsed.interactives)) {
+      parsed.interactives = parsed.interactives.map(item => ({
+        ...item,
+        cost: normalizeCost(item.cost, `互动装置[${item.name}]`)
+      }));
+
+      // 记录转换日志
+      this.logger.info('🧹 [数据清理] cost字段标准化', {
+        interactivesCount: parsed.interactives.length,
+        normalized: parsed.interactives.map(i => ({
+          name: i.name,
+          originalCost: i.cost,
+          normalizedCost: i.cost
+        }))
+      });
+    }
+
     const solution = {
       technologies: parsed.technologies || this.getDefaultTechnologies(),
       interactives: parsed.interactives || this.getDefaultInteractives(requirements),
@@ -375,35 +394,6 @@ export class InteractiveTechAgent {
     });
 
     return solution;
-  }
-
-  /**
-   * ✅ 默认互动技术方案
-   */
-  private getDefaultInteractiveSolution(
-    fallbackContent?: string,
-    requirements?: ExhibitionRequirement
-  ): InteractiveSolution {
-    this.logger.info('🔧 [默认方案] 生成默认互动技术方案');
-
-    return {
-      technologies: this.getDefaultTechnologies(),
-      interactives: requirements ? this.getDefaultInteractives(requirements) : [],
-      technicalRequirements: fallbackContent || "基于策划概念的互动技术方案"
-    };
-  }
-
-  /**
-   * ✅ 默认技术列表
-   */
-  private getDefaultTechnologies(): string[] {
-    return [
-      "触摸屏显示系统",
-      "体感互动装置",
-      "AR增强现实技术",
-      "LED沉浸式投影",
-      "音频导览系统"
-    ];
   }
 
   /**

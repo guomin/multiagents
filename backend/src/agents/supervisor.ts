@@ -129,23 +129,39 @@ export class SupervisorAgent {
 
         // 大纲细化字段（新增）
         exhibitionOutline: !!state.exhibitionOutline,
-        outlineZones: state.exhibitionOutline?.zones?.map((z, idx) =>
-          `${idx + 1}. ${z.name}（${z.percentage}%）：${z.area}㎡，${z.function}，展品${z.exhibitIds?.length || 0}件，互动${z.interactiveIds?.length || 0}个`
-        ).join('\n') || '尚未提供',
+        outlineZones: state.exhibitionOutline?.zones?.map((z: any) =>
+          `- **${z.name}** (占比${z.percentage}%)
+  - 面积: ${z.area}㎡
+  - 功能: ${z.function}
+  - 预算分配: ¥${z.budgetAllocation?.toLocaleString() || '未提供'}
+  - 展品数量: ${z.exhibitIds?.length || 0}件
+  - 互动装置: ${z.interactiveIds?.length || 0}个`
+        ).join('\n\n') || '尚未提供',
         outlineExhibitsCount: state.exhibitionOutline?.exhibits?.length || 0,
-        outlineExhibits: state.exhibitionOutline?.exhibits?.slice(0, 10).map((e, idx) =>
-          `${idx + 1}. ${e.name}（${e.type}，保护等级：${e.protectionLevel}）`
-        ).join('\n') || '尚未提供',
+        outlineExhibits: state.exhibitionOutline?.exhibits?.slice(0, 15).map((e: any, idx: number) =>
+          `- **${e.name}**
+  - 类型: ${e.type}
+  - 保护等级: ${e.protectionLevel}
+  - 展柜要求: ${e.showcaseRequirement || '未提供'}
+  - 保险费用: ¥${e.insurance?.toLocaleString() || '未提供'}
+  - 运输费用: ¥${e.transportCost?.toLocaleString() || '未提供'}${e.dimensions ? `\n  - 尺寸: ${e.dimensions.length}×${e.dimensions.width}×${e.dimensions.height}米` : ''}`
+        ).join('\n\n') + (state.exhibitionOutline?.exhibits && state.exhibitionOutline.exhibits.length > 15 ? `\n\n*注：共 ${state.exhibitionOutline.exhibits.length} 件展品，以上仅展示前 15 件*` : '') || '尚未提供',
         outlineInteractiveCount: state.exhibitionOutline?.interactivePlan?.length || 0,
-        outlineInteractive: state.exhibitionOutline?.interactivePlan?.map((ip, idx) =>
-          `${idx + 1}. ${ip.name}（${ip.type}，优先级：${ip.priority}，预估成本：¥${ip.estimatedCost?.toLocaleString()}）`
-        ).join('\n') || '尚未提供',
+        outlineInteractive: state.exhibitionOutline?.interactivePlan?.map((ip: any, idx: number) =>
+          `- **${ip.name}** (${ip.type})
+  - 优先级: ${ip.priority === 'high' ? '高' : ip.priority === 'medium' ? '中' : '低'}
+  - 预估成本: ¥${ip.estimatedCost?.toLocaleString() || '未提供'}
+  - 放置展区: ${ip.zoneId || '未指定'}
+  - 功能描述: ${ip.description || '未提供'}`
+        ).join('\n\n') || '尚未提供',
         outlineBudgetTotal: state.exhibitionOutline?.budgetAllocation?.total?.toLocaleString() || '未提供',
-        outlineBudgetBreakdown: state.exhibitionOutline?.budgetAllocation?.breakdown?.map(b =>
-          `- ${b.category}：¥${b.amount?.toLocaleString()}${b.subCategories ? `\n  ${b.subCategories.map((s: any) => `    - ${s.name}：¥${s.amount?.toLocaleString()}`).join('\n  ')}` : ''}`
+        outlineBudgetBreakdown: state.exhibitionOutline?.budgetAllocation?.breakdown?.map((b: any) =>
+          `- **${b.category}**: ¥${b.amount?.toLocaleString() || '未提供'}${b.subCategories ? `\n  ${b.subCategories.map((s: any) => `    - ${s.name}: ¥${s.amount?.toLocaleString() || '未提供'}`).join('\n  ')}` : ''}`
         ).join('\n') || '尚未提供',
         outlineSpaceTotal: state.exhibitionOutline?.spaceConstraints?.totalArea || '未提供',
         outlineSpaceZones: `${state.exhibitionOutline?.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline?.spaceConstraints?.maxZoneCount || '-'} 个`,
+        outlineSpaceAisleWidth: `≥${state.exhibitionOutline?.spaceConstraints?.minAisleWidth || '-'} 米`,
+        outlineSpaceMainZoneRatio: state.exhibitionOutline?.spaceConstraints?.mainZoneRatio ? `≥${(state.exhibitionOutline.spaceConstraints.mainZoneRatio * 100).toFixed(0)}%` : '-',
 
         // 空间设计字段
         spatialLayout: !!state.spatialLayout,
@@ -255,28 +271,47 @@ ${state.conceptPlan ? `
 
 ### 2. 大纲细化
 ${state.exhibitionOutline ? `
-- **展区划分** (${state.exhibitionOutline.zones?.length || 0}个展区):
-${state.exhibitionOutline.zones?.map((z, idx) =>
-  `  ${idx + 1}. ${z.name}（占比${z.percentage}%）：${z.area}㎡，${z.function}，展品${z.exhibitIds?.length || 0}件，互动${z.interactiveIds?.length || 0}个`
-).join("\n") || '未提供'}
+**展区划分** (${state.exhibitionOutline.zones?.length || 0}个展区):
+${state.exhibitionOutline.zones?.map((z: any, idx: number) =>
+  `- **${z.name}** (占比${z.percentage}%)
+  - 面积: ${z.area}㎡
+  - 功能: ${z.function}
+  - 预算分配: ¥${z.budgetAllocation?.toLocaleString() || '未提供'}
+  - 展品数量: ${z.exhibitIds?.length || 0}件
+  - 互动装置: ${z.interactiveIds?.length || 0}个`
+).join('\n\n') || '未提供'}
 
-- **展品清单** (${state.exhibitionOutline.exhibits?.length || 0}件展品):
-${state.exhibitionOutline.exhibits?.slice(0, 10).map((e, idx) =>
-  `  ${idx + 1}. ${e.name}（${e.type}，保护等级：${e.protectionLevel}）`
-).join("\n") || '未提供'}
-${state.exhibitionOutline.exhibits?.length > 10 ? `\n  *注：共 ${state.exhibitionOutline.exhibits.length} 件展品，以上仅展示前 10 件*` : ''}
+**展品清单** (${state.exhibitionOutline.exhibits?.length || 0}件展品):
+${state.exhibitionOutline.exhibits?.slice(0, 15).map((e: any, idx: number) =>
+  `- **${e.name}**
+  - 类型: ${e.type}
+  - 保护等级: ${e.protectionLevel}
+  - 展柜要求: ${e.showcaseRequirement || '未提供'}
+  - 保险费用: ¥${e.insurance?.toLocaleString() || '未提供'}
+  - 运输费用: ¥${e.transportCost?.toLocaleString() || '未提供'}${e.dimensions ? `\n  - 尺寸: ${e.dimensions.length}×${e.dimensions.width}×${e.dimensions.height}米` : ''}`
+).join('\n\n') || '未提供'}
+${state.exhibitionOutline.exhibits?.length > 15 ? `\n*注：共 ${state.exhibitionOutline.exhibits.length} 件展品，以上仅展示前 15 件*` : ''}
 
-- **互动装置规划** (${state.exhibitionOutline.interactivePlan?.length || 0}个装置):
-${state.exhibitionOutline.interactivePlan?.map((ip, idx) =>
-  `  ${idx + 1}. ${ip.name}（${ip.type}，优先级：${ip.priority}，预估成本：¥${ip.estimatedCost?.toLocaleString()}）`
-).join("\n") || '未提供'}
+**互动装置规划** (${state.exhibitionOutline.interactivePlan?.length || 0}个装置):
+${state.exhibitionOutline.interactivePlan?.map((ip: any, idx: number) =>
+  `- **${ip.name}** (${ip.type})
+  - 优先级: ${ip.priority === 'high' ? '高' : ip.priority === 'medium' ? '中' : '低'}
+  - 预估成本: ¥${ip.estimatedCost?.toLocaleString() || '未提供'}
+  - 放置展区: ${ip.zoneId || '未指定'}
+  - 功能描述: ${ip.description || '未提供'}`
+).join('\n\n') || '未提供'}
 
-- **预算框架**: 总计 ¥${state.exhibitionOutline.budgetAllocation?.total?.toLocaleString() || '未提供'}
-${state.exhibitionOutline.budgetAllocation?.breakdown?.map(b =>
-  `  - **${b.category}**：¥${b.amount?.toLocaleString()}${b.subCategories ? `\n${b.subCategories.map((s: any) => `    - ${s.name}：¥${s.amount?.toLocaleString()}`).join("\n")}` : ''}`
-).join("\n") || '未提供'}
+**预算框架**:
+- 总预算: ¥${state.exhibitionOutline.budgetAllocation?.total?.toLocaleString() || '未提供'}
+${state.exhibitionOutline.budgetAllocation?.breakdown?.map((b: any) =>
+  `- **${b.category}**: ¥${b.amount?.toLocaleString() || '未提供'}${b.subCategories ? `\n  ${b.subCategories.map((s: any) => `    - ${s.name}: ¥${s.amount?.toLocaleString() || '未提供'}`).join('\n  ')}` : ''}`
+).join('\n') || '未提供'}
 
-- **空间约束**: 总面积 ${state.exhibitionOutline.spaceConstraints?.totalArea || '未提供'}㎡，展区数量 ${state.exhibitionOutline.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline.spaceConstraints?.maxZoneCount || '-'} 个
+**空间约束**:
+- 总面积: ${state.exhibitionOutline.spaceConstraints?.totalArea || '未提供'}㎡
+- 展区数量: ${state.exhibitionOutline.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline.spaceConstraints?.maxZoneCount || '-'} 个
+- 通道宽度: ≥${state.exhibitionOutline.spaceConstraints?.minAisleWidth || '-'} 米
+- 主展区占比: ≥${state.exhibitionOutline.spaceConstraints?.mainZoneRatio ? (state.exhibitionOutline.spaceConstraints.mainZoneRatio * 100).toFixed(0) : '-'}%
 ` : "⚠️ 大纲细化尚未完成"}
 
 ### 3. 空间设计

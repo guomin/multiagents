@@ -11,6 +11,7 @@ import {
 import { ModelConfigFactory, ModelConfig } from "../config/model";
 import { promptManager } from "../prompts";
 import { createLogger } from "../utils/logger";
+import { normalizeCost } from "../utils/cost-normalizer";
 
 export class BudgetControllerAgent {
   private llm: ChatOpenAI;
@@ -272,8 +273,11 @@ export class BudgetControllerAgent {
     }
 
     // 验证关键字段
-    if (!requirements.budget || typeof requirements.budget.total !== 'number') {
-      throw new Error("requirements.budget.total 必须是数字");
+    if (!requirements.budget ||
+        typeof requirements.budget.total !== 'number' ||
+        requirements.budget.total === null ||
+        Number.isNaN(requirements.budget.total)) {
+      throw new Error("requirements.budget.total 必须是有效数字");
     }
 
     if (!spatialLayout.zones || spatialLayout.zones.length === 0) {
@@ -298,19 +302,23 @@ export class BudgetControllerAgent {
 
     this.logger.info('💰 [预算计算] 开始基于实际设计方案计算预算');
 
-    // 1. 互动技术设备（使用实际 cost）
-    const interactiveCost = interactiveSolution.interactives.reduce(
-      (sum, item) => sum + (item.cost || 0),
-      0
-    );
+    // 1. 互动技术设备（使用实际 cost，并进行数据标准化）
+    let interactiveCost = 0;
+    const normalizedInteractives = interactiveSolution.interactives.map(item => {
+      const normalized = normalizeCost(item.cost, `互动装置[${item.name}]`);
+      interactiveCost += normalized;
 
-    this.logger.info('💰 [预算计算] 互动技术设备', {
+      return {
+        name: item.name,
+        originalCost: item.cost,
+        normalizedCost: normalized
+      };
+    });
+
+    this.logger.info('💰 [预算计算] 互动技术设备（已标准化）', {
       interactivesCount: interactiveSolution.interactives.length,
       actualCost: interactiveCost,
-      items: interactiveSolution.interactives.map(i => ({
-        name: i.name,
-        cost: i.cost || 0
-      }))
+      items: normalizedInteractives
     });
 
     // 2. 空间设计与施工（基于 zones）
@@ -524,4 +532,6 @@ export class BudgetControllerAgent {
 
     return recommendations;
   }
+
 }
+
