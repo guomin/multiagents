@@ -57,3 +57,9 @@ exhibition-report.md
 *.md.temp
 
 tmpclaude-*-cwd
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+backend/data/*.db
