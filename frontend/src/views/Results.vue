@@ -22,12 +22,29 @@
             </div>
           </div>
           <div class="action-buttons">
-            <ElButton @click="exportReport('markdown')" :icon="Document">
-              导出 Markdown
-            </ElButton>
-            <ElButton @click="exportReport('pdf')" :icon="Download">
-              导出 PDF
-            </ElButton>
+            <ElDropdown @command="handleExportCommand" placement="bottom-end">
+              <ElButton :icon="Document">
+                导出报告
+                <ElIcon class="el-icon--right"><ArrowRight /></ElIcon>
+              </ElButton>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem command="markdown">
+                    <ElIcon><Document /></ElIcon>
+                    Markdown 格式
+                  </ElDropdownItem>
+                  <ElDropdownItem command="pdf">
+                    <ElIcon><Download /></ElIcon>
+                    PDF 格式
+                  </ElDropdownItem>
+                  <ElDropdownItem divided command="pdf-force">
+                    <ElIcon><Download /></ElIcon>
+                    <ElIcon style="color: #f59e0b;"><Refresh /></ElIcon>
+                    强制重新生成 PDF
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
             <ElButton type="primary" @click="createNewProject" :icon="Plus">
               新建项目
             </ElButton>
@@ -106,6 +123,102 @@
                 >
                   {{ exhibit }}
                 </ElTag>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 详细大纲 -->
+        <div class="design-card card-outline">
+          <div class="card-header">
+            <div class="header-icon">
+              <ElIcon><Document /></ElIcon>
+            </div>
+            <h3 class="card-title">详细大纲</h3>
+          </div>
+          <div v-if="currentWorkflow?.detailedOutline" class="card-body">
+            <div class="info-section">
+              <h4 class="section-title">展区划分</h4>
+              <div class="outline-structure">
+                <div
+                  v-for="zone in currentWorkflow.detailedOutline.zones"
+                  :key="zone.id"
+                  class="outline-section"
+                >
+                  <div class="section-header-inline">
+                    <span class="section-title-text">{{ zone.name }}</span>
+                    <div class="zone-tags">
+                      <ElTag size="small" type="info">{{ zone.area }}㎡</ElTag>
+                      <ElTag size="small" type="success">{{ zone.percentage }}%</ElTag>
+                    </div>
+                  </div>
+                  <p class="section-desc">{{ zone.function }}</p>
+                  <div class="zone-details">
+                    <div class="detail-item-inline">
+                      <span class="detail-label">预算:</span>
+                      <span class="detail-value">¥{{ zone.budgetAllocation.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="currentWorkflow.detailedOutline.exhibits && currentWorkflow.detailedOutline.exhibits.length" class="info-section">
+              <h4 class="section-title">展品清单</h4>
+              <div class="exhibits-grid">
+                <div
+                  v-for="exhibit in currentWorkflow.detailedOutline.exhibits"
+                  :key="exhibit.id"
+                  class="exhibit-item"
+                >
+                  <div class="exhibit-header">
+                    <span class="exhibit-name">{{ exhibit.name }}</span>
+                    <ElTag size="small" type="warning">{{ exhibit.type }}</ElTag>
+                  </div>
+                  <div class="exhibit-info">
+                    <div class="info-row">
+                      <span class="label">保护级别:</span>
+                      <span class="value">{{ exhibit.protectionLevel }}</span>
+                    </div>
+                    <div v-if="exhibit.dimensions" class="info-row">
+                      <span class="label">尺寸:</span>
+                      <span class="value">{{ exhibit.dimensions.length }}×{{ exhibit.dimensions.width }}×{{ exhibit.dimensions.height }}m</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="label">保险:</span>
+                      <span class="value">¥{{ exhibit.insurance.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="currentWorkflow.detailedOutline.interactivePlan && currentWorkflow.detailedOutline.interactivePlan.length" class="info-section">
+              <h4 class="section-title">互动装置规划</h4>
+              <div class="interactive-grid">
+                <div
+                  v-for="interactive in currentWorkflow.detailedOutline.interactivePlan"
+                  :key="interactive.id"
+                  class="interactive-item-compact"
+                >
+                  <div class="interactive-header-compact">
+                    <span class="interactive-name-compact">{{ interactive.name }}</span>
+                    <div class="interactive-meta">
+                      <ElTag size="small" type="primary">{{ interactive.type }}</ElTag>
+                      <ElTag
+                        size="small"
+                        :type="interactive.priority === 'high' ? 'danger' : interactive.priority === 'medium' ? 'warning' : 'info'"
+                      >
+                        {{ interactive.priority === 'high' ? '高优先级' : interactive.priority === 'medium' ? '中优先级' : '低优先级' }}
+                      </ElTag>
+                    </div>
+                  </div>
+                  <p class="interactive-desc-compact">{{ interactive.description }}</p>
+                  <div class="interactive-cost-compact">
+                    <span class="cost-label">预估成本:</span>
+                    <span class="cost-value">¥{{ interactive.estimatedCost.toLocaleString() }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -282,32 +395,6 @@
           </div>
         </div>
       </div>
-
-      <!-- 智能体工作回顾 -->
-      <div class="agents-section">
-        <div class="section-header">
-          <div class="section-title-wrapper">
-            <div class="section-icon">
-              <ElIcon><Timer /></ElIcon>
-            </div>
-            <h3 class="section-title">智能体工作回顾</h3>
-          </div>
-        </div>
-        <div class="agents-grid">
-          <div
-            v-for="agent in agentStatuses"
-            :key="agent.id"
-            class="agent-card"
-            :class="`agent-${agent.status}`"
-          >
-            <div class="agent-status-dot" :class="`dot-${agent.status}`"></div>
-            <div class="agent-name">{{ agent.name }}</div>
-            <div v-if="agent.startTime" class="agent-duration">
-              耗时: {{ calculateDuration(agent.startTime, agent.endTime) }}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- 无数据提示 -->
@@ -335,9 +422,10 @@ import {
   Plus,
   DataAnalysis,
   Warning,
-  Timer,
   Loading,
   ArrowLeft,
+  ArrowRight,
+  Refresh,
   Wallet,
   OfficeBuilding,
   Calendar,
@@ -494,8 +582,6 @@ const cleanMarkdownText = (text: string): string => {
 
 // 直接使用 store 的响应式引用，而不是解构
 const currentWorkflow = computed(() => exhibitionStore.currentWorkflow)
-const agentStatuses = computed(() => exhibitionStore.agentStatuses)
-const completedAgents = computed(() => exhibitionStore.completedAgents)
 
 // 从 API 加载项目数据
 const loadProjectData = async () => {
@@ -536,6 +622,7 @@ const loadProjectData = async () => {
           specialRequirements: JSON.parse(data.project.special_requirements || '[]')
         },
         conceptPlan: data.designResults.find((r: any) => r.result_type === 'concept')?.result_data,
+        detailedOutline: data.designResults.find((r: any) => r.result_type === 'outline')?.result_data,
         spatialLayout: data.designResults.find((r: any) => r.result_type === 'spatial')?.result_data,
         visualDesign: data.designResults.find((r: any) => r.result_type === 'visual')?.result_data,
         interactiveSolution: data.designResults.find((r: any) => r.result_type === 'interactive')?.result_data,
@@ -589,6 +676,33 @@ const loadProjectData = async () => {
             }
 
             workflowData.conceptPlan.narrative = narrativeText
+          }
+        }
+
+        // 处理详细大纲
+        if (workflowData.detailedOutline) {
+          workflowData.detailedOutline = JSON.parse(workflowData.detailedOutline)
+
+          // 处理 zones 数组中的 function 字段（可能包含 Markdown）
+          if (workflowData.detailedOutline.zones && Array.isArray(workflowData.detailedOutline.zones)) {
+            workflowData.detailedOutline.zones = workflowData.detailedOutline.zones.map((zone: any) => {
+              if (zone.function && typeof zone.function === 'string') {
+                zone.function = removeCodeBlockMarkers(zone.function)
+                zone.function = cleanMarkdownText(zone.function)
+              }
+              return zone
+            })
+          }
+
+          // 处理 interactivePlan 数组中的 description 字段
+          if (workflowData.detailedOutline.interactivePlan && Array.isArray(workflowData.detailedOutline.interactivePlan)) {
+            workflowData.detailedOutline.interactivePlan = workflowData.detailedOutline.interactivePlan.map((item: any) => {
+              if (item.description && typeof item.description === 'string') {
+                item.description = removeCodeBlockMarkers(item.description)
+                item.description = cleanMarkdownText(item.description)
+              }
+              return item
+            })
           }
         }
 
@@ -780,7 +894,8 @@ const createNewProject = () => {
   router.push('/create')
 }
 
-const exportReport = async (format: 'pdf' | 'markdown') => {
+// 处理导出命令
+const handleExportCommand = async (command: string) => {
   try {
     const projectId = route.params.id as string
 
@@ -789,10 +904,22 @@ const exportReport = async (format: 'pdf' | 'markdown') => {
       return
     }
 
-    ElMessage.info(`正在导出 ${format.toUpperCase()} 格式报告...`)
+    let format: 'pdf' | 'markdown' = 'markdown'
+    let forceRegenerate = false
+
+    if (command === 'pdf-force') {
+      format = 'pdf'
+      forceRegenerate = true
+      ElMessage.info('正在强制重新生成 PDF 报告（可能需要较长时间）...')
+    } else if (command === 'pdf') {
+      format = 'pdf'
+      ElMessage.info('正在导出 PDF 报告...')
+    } else {
+      ElMessage.info('正在导出 Markdown 报告...')
+    }
 
     // 调用 API 导出报告
-    const blob = await exhibitionAPI.exportReport(projectId, format)
+    const blob = await exhibitionAPI.exportReport(projectId, format, forceRegenerate)
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
@@ -812,26 +939,6 @@ const exportReport = async (format: 'pdf' | 'markdown') => {
   } catch (error) {
     console.error('导出报告失败:', error)
     ElMessage.error('导出失败，请重试')
-  }
-}
-
-const calculateDuration = (startTime?: Date, endTime?: Date) => {
-  if (!startTime) return '0s'
-
-  const start = new Date(startTime)
-  const end = endTime ? new Date(endTime) : new Date()
-  const duration = end.getTime() - start.getTime()
-
-  const seconds = Math.floor(duration / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`
-  } else {
-    return `${seconds}s`
   }
 }
 
@@ -1053,6 +1160,10 @@ onMounted(async () => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
+.card-outline .header-icon {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
 .card-spatial .header-icon {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 }
@@ -1148,6 +1259,193 @@ onMounted(async () => {
 .zone-info {
   color: #6b7280;
   font-size: 0.8125rem;
+}
+
+/* 详细大纲样式 */
+.outline-structure {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.outline-section {
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 3px solid #f093fb;
+}
+
+.section-header-inline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.zone-tags {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.section-title-text {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.9375rem;
+}
+
+.section-desc {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0 0 0.75rem 0;
+  line-height: 1.6;
+}
+
+.zone-details {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.detail-item-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.detail-label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-value {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+/* 展品网格 */
+.exhibits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.exhibit-item {
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.exhibit-item:hover {
+  border-color: #f093fb;
+  box-shadow: 0 2px 8px rgba(240, 147, 251, 0.1);
+}
+
+.exhibit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  gap: 0.5rem;
+}
+
+.exhibit-name {
+  flex: 1;
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.875rem;
+}
+
+.exhibit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+.info-row .label {
+  color: #6b7280;
+}
+
+.info-row .value {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+/* 互动装置网格 */
+.interactive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.interactive-item-compact {
+  padding: 1rem;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.interactive-item-compact:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.interactive-header-compact {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+.interactive-name-compact {
+  flex: 1;
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.875rem;
+}
+
+.interactive-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-end;
+}
+
+.interactive-desc-compact {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  margin: 0 0 0.75rem 0;
+  line-height: 1.5;
+}
+
+.interactive-cost-compact {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid #dbeafe;
+  font-size: 0.8125rem;
+}
+
+.interactive-cost-compact .cost-label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.interactive-cost-compact .cost-value {
+  color: #10b981;
+  font-weight: 600;
 }
 
 .interactive-list {
@@ -1340,92 +1638,6 @@ onMounted(async () => {
   margin-top: 0.125rem;
 }
 
-/* 智能体部分 */
-.agents-section {
-  background: white;
-  border-radius: 16px;
-  padding: 2rem;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-
-.agents-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.agent-card {
-  padding: 1rem;
-  border-radius: 12px;
-  border: 2px solid;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-}
-
-.agent-pending {
-  border-color: #d1d5db;
-  background: #f9fafb;
-}
-
-.agent-running {
-  border-color: #93c5fd;
-  background: #eff6ff;
-}
-
-.agent-completed {
-  border-color: #6ee7b7;
-  background: #ecfdf5;
-}
-
-.agent-error {
-  border-color: #fca5a5;
-  background: #fef2f2;
-}
-
-.agent-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.dot-pending {
-  background: #9ca3af;
-}
-
-.dot-running {
-  background: #3b82f6;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-.dot-completed {
-  background: #10b981;
-}
-
-.dot-error {
-  background: #ef4444;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.agent-name {
-  font-weight: 500;
-  color: #1f2937;
-}
-
-.agent-duration {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
 /* 空状态 */
 .empty-state {
   background: white;
@@ -1513,10 +1725,6 @@ onMounted(async () => {
 
 @media (max-width: 480px) {
   .overview-section {
-    grid-template-columns: 1fr;
-  }
-
-  .agents-grid {
     grid-template-columns: 1fr;
   }
 }
