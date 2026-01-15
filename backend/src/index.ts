@@ -8,6 +8,7 @@ import { exhibitionAPI } from './routes/exhibition'
 import { logsAPI } from './routes/logs'
 import { projectsAPI } from './routes/projects'
 import { humanDecisionAPI } from './routes/human-decision'
+import { authRoutes } from './auth/routes/auth.routes'
 import { ModelConfigFactory } from './config/model'
 import { requestLogger, errorLogger } from './middleware/request-logger'
 import { createLogger } from './utils/logger'
@@ -86,6 +87,7 @@ app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 // API 路由
+app.use('/api/auth', authRoutes)
 app.use('/api', exhibitionAPI)
 app.use('/api/logs', logsAPI)
 app.use('/api/projects', projectsAPI)

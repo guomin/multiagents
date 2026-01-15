@@ -250,11 +250,11 @@ export class VisualDesignerAgent {
         return this.buildVisualDesignFromParsed(parsed, rawContent);
       } else {
         this.logger.info('🔧 [解析方式] 非JSON格式，使用默认结构');
-        return this.getDefaultVisualDesign(rawContent);
+        return this.getDefaultVisualDesign(rawContent, '响应内容不是有效的 JSON 格式');
       }
     } catch (parseError) {
       this.logger.error('❌ [解析失败] 解析失败，使用默认结果', parseError as Error);
-      return this.getDefaultVisualDesign(rawContent);
+      return this.getDefaultVisualDesign(rawContent, 'JSON 解析抛出异常');
     }
   }
 
@@ -309,8 +309,11 @@ export class VisualDesignerAgent {
   /**
    * ✅ 默认视觉设计
    */
-  private getDefaultVisualDesign(fallbackContent?: string): VisualDesign {
-    this.logger.info('🔧 [默认方案] 生成默认视觉设计');
+  private getDefaultVisualDesign(fallbackContent?: string, fallbackReason: string = 'JSON 解析失败'): VisualDesign {
+    this.logger.warn('⚠️ [降级方案] 使用默认视觉设计', {
+      reason: fallbackReason,
+      fallbackContent: fallbackContent?.substring(0, 200) || 'N/A'
+    });
 
     return {
       colorScheme: this.getDefaultColorScheme(),

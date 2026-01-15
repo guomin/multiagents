@@ -112,6 +112,9 @@ export class PDFWorkerManager {
     const startTime = Date.now();
 
     try {
+      // 在这个代码块中，我们确保 worker 不为 null（已在上面检查）
+      const worker = this.worker!;
+
       // 创建 Promise 包装 Worker 消息
       const result = await new Promise<PDFGenerateResult>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -128,30 +131,51 @@ export class PDFWorkerManager {
 
           if (message.type === 'success') {
             const duration = Date.now() - startTime;
+
+            // Worker 传递的 Buffer 会被序列化，需要重新构造
+            let pdfBuffer: Buffer;
+            if (Buffer.isBuffer(message.buffer)) {
+              pdfBuffer = message.buffer;
+            } else if (message.buffer instanceof Uint8Array) {
+              pdfBuffer = Buffer.from(message.buffer.buffer || message.buffer);
+            } else if (message.buffer && typeof message.buffer === 'object') {
+              // Buffer 被序列化成对象，包含 data 数组
+              const data = message.buffer.data || (message.buffer as any).buffer?.data;
+              pdfBuffer = Buffer.from(data || message.buffer);
+            } else {
+              const error = new Error(`PDF 生成失败：无效的 buffer 类型 (${typeof message.buffer})`);
+              logger.error('❌ 无效的 buffer 类型', error, {
+                bufferType: typeof message.buffer,
+                constructorName: message.buffer?.constructor?.name
+              });
+              reject(error);
+              return;
+            }
+
             logger.info('✅ PDF 生成成功', {
               projectId,
               duration: `${duration}ms`,
-              size: `${message.buffer.length} bytes`
+              size: `${pdfBuffer.length} bytes`
             });
 
             resolve({
-              buffer: Buffer.from(message.buffer),
+              buffer: pdfBuffer,
               duration
             });
 
-            this.worker?.off('message', messageHandler);
+            worker.off('message', messageHandler);
           } else if (message.type === 'error') {
             logger.error('❌ PDF 生成失败', new Error(message.error));
             reject(new Error(message.error));
-            this.worker?.off('message', messageHandler);
+            worker.off('message', messageHandler);
           }
         };
 
         // 监听 Worker 消息
-        this.worker.on('message', messageHandler);
+        worker.on('message', messageHandler);
 
         // 发送生成任务到 Worker
-        this.worker.postMessage({
+        worker.postMessage({
           type: 'generate',
           markdown,
           projectId
@@ -239,6 +263,9 @@ export class PDFWorkerManager {
         printBackground: true
       });
 
+      // 确保 pdfBuffer 是 Buffer 类型
+      const finalBuffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+
       await browser.close();
 
       const duration = Date.now() - startTime;
@@ -246,11 +273,11 @@ export class PDFWorkerManager {
       logger.info('✅ [主线程] PDF 生成成功', {
         projectId,
         duration: `${duration}ms`,
-        size: pdfBuffer.length
+        size: finalBuffer.length
       });
 
       return {
-        buffer: pdfBuffer,
+        buffer: finalBuffer,
         duration
       };
 

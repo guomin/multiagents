@@ -264,11 +264,11 @@ export class SpatialDesignerAgent {
         return this.buildSpatialLayoutFromParsed(parsed, rawContent, requirements);
       } else {
         this.logger.info('🔧 [解析方式] 非JSON格式，使用默认结构');
-        return this.getDefaultSpatialLayout(requirements, rawContent);
+        return this.getDefaultSpatialLayout(requirements, rawContent, '响应内容不是有效的 JSON 格式');
       }
     } catch (parseError) {
       this.logger.error('❌ [解析失败] 解析失败，使用默认结果', parseError as Error);
-      return this.getDefaultSpatialLayout(requirements, rawContent);
+      return this.getDefaultSpatialLayout(requirements, rawContent, 'JSON 解析抛出异常');
     }
   }
 
@@ -359,9 +359,13 @@ export class SpatialDesignerAgent {
    */
   private getDefaultSpatialLayout(
     requirements: ExhibitionRequirement,
-    fallbackContent?: string
+    fallbackContent?: string,
+    fallbackReason: string = 'JSON 解析失败'
   ): SpatialLayout {
-    this.logger.info('🔧 [默认方案] 生成默认空间布局');
+    this.logger.warn('⚠️ [降级方案] 使用默认空间布局', {
+      reason: fallbackReason,
+      fallbackContent: fallbackContent?.substring(0, 200) || 'N/A'
+    });
 
     return {
       layout: fallbackContent || "基于策划概念的空间布局方案",

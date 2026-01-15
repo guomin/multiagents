@@ -319,11 +319,11 @@ export class InteractiveTechAgent {
         return this.buildInteractiveSolutionFromParsed(parsed, rawContent, requirements);
       } else {
         this.logger.info('🔧 [解析方式] 非JSON格式，使用默认结构');
-        return this.getDefaultInteractiveSolution(rawContent, requirements);
+        return this.getDefaultInteractiveSolution(rawContent, requirements, '响应内容不是有效的 JSON 格式');
       }
     } catch (parseError) {
       this.logger.error('❌ [解析失败] 解析失败，使用默认结果', parseError as Error);
-      return this.getDefaultInteractiveSolution(rawContent, requirements);
+      return this.getDefaultInteractiveSolution(rawContent, requirements, 'JSON 解析抛出异常');
     }
   }
 
@@ -470,5 +470,25 @@ ${i + 1}. **${r.title}**
    链接：${r.url}
    简介：${r.content.substring(0, 150)}...
 `).join("\n");
+  }
+
+  /**
+   * ✅ 默认互动技术方案（降级方案）
+   */
+  private getDefaultInteractiveSolution(
+    rawContent: string,
+    requirements: ExhibitionRequirement,
+    fallbackReason: string = 'JSON 解析失败'
+  ): InteractiveSolution {
+    this.logger.warn('⚠️ [降级方案] 使用默认互动技术方案', {
+      reason: fallbackReason,
+      rawContent: rawContent.substring(0, 200)
+    });
+
+    return {
+      technologies: this.getDefaultTechnologies(),
+      interactives: this.getDefaultInteractives(requirements),
+      technicalRequirements: rawContent || "基于策划概念的互动技术方案"
+    };
   }
 }

@@ -6,6 +6,69 @@ const api = axios.create({
   timeout: 300000, // 5分钟超时
 })
 
+// 请求拦截器：自动添加 JWT token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// 响应拦截器：处理 401 错误和 token 刷新
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    // 如果是 401 错误且不是刷新 token 的请求
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      // 尝试刷新 token
+      try {
+        const refreshToken = localStorage.getItem('refresh_token')
+        if (refreshToken) {
+          const response = await axios.post(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'}/auth/refresh`,
+            { refreshToken }
+          )
+
+          const { accessToken, refreshToken: newRefreshToken } = response.data.data
+
+          // 保存新 token
+          localStorage.setItem('access_token', accessToken)
+          if (newRefreshToken) {
+            localStorage.setItem('refresh_token', newRefreshToken)
+          }
+
+          // 重试原始请求
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`
+          return api(originalRequest)
+        }
+      } catch (refreshError) {
+        // 刷新失败，清除 token 并跳转到登录页
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('user')
+
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+
+        return Promise.reject(refreshError)
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
+
 // 项目类型定义
 export interface Project {
   id: string

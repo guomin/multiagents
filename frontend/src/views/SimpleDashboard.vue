@@ -57,6 +57,34 @@
           </div>
         </div>
         <div class="header-actions">
+          <div v-if="authStore.isAuthenticated" class="user-info">
+            <ElDropdown trigger="click">
+              <div class="user-dropdown-trigger">
+                <ElAvatar :size="32" class="user-avatar">
+                  {{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}
+                </ElAvatar>
+                <span class="user-name">{{ authStore.user?.username || '用户' }}</span>
+                <ElIcon class="el-icon--right"><ArrowDown /></ElIcon>
+              </div>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem disabled>
+                    <ElIcon><User /></ElIcon>
+                    {{ authStore.user?.username || '用户' }}
+                    <ElTag v-if="authStore.isAdmin" type="danger" size="small" style="margin-left: 8px">管理员</ElTag>
+                  </ElDropdownItem>
+                  <ElDropdownItem v-if="authStore.isAdmin" @click="router.push('/admin/users')">
+                    <ElIcon><User /></ElIcon>
+                    用户管理
+                  </ElDropdownItem>
+                  <ElDropdownItem divided @click="handleLogout">
+                    <ElIcon><SwitchButton /></ElIcon>
+                    退出登录
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </div>
           <ElButton type="primary" size="large" @click="createNewExhibition">
             <ElIcon style="margin-right: 6px"><Plus /></ElIcon>
             创建新展览
@@ -249,13 +277,17 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExhibitionStore } from '@/stores/exhibition'
+import { useAuthStore } from '@/stores/auth'
 import { exhibitionAPI } from '@/api/exhibition'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Exhibition3D from '@/components/Exhibition3D.vue'
 import {
   Plus,
   Folder,
   CircleCheck,
+  User,
+  ArrowDown,
+  SwitchButton,
   Loading,
   TrendCharts,
   Minus,
@@ -271,6 +303,7 @@ import {
 
 const router = useRouter()
 const exhibitionStore = useExhibitionStore()
+const authStore = useAuthStore()
 
 const stats = ref({
   total: 0,
@@ -280,6 +313,23 @@ const stats = ref({
   error: 0,
   agents: 6
 })
+
+// 登出方法
+const handleLogout = async () => {
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    await authStore.logout()
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  } catch (error) {
+    // 用户取消操作
+  }
+}
 
 const statsLoading = ref(false)
 
@@ -831,5 +881,38 @@ onMounted(async () => {
   to {
     opacity: 1;
   }
+}
+
+/* 用户信息样式 */
+.user-info {
+  display: flex;
+  align-items: center;
+  margin-right: 16px;
+}
+
+.user-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.user-dropdown-trigger:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
 }
 </style>

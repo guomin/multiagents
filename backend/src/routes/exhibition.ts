@@ -7,6 +7,7 @@ import { createLogger } from '../utils/logger'
 import { responseTimeMonitor } from '../utils/performance-monitor'
 import { projectQueries, workflowQueries, agentExecutionQueries, designResultQueries } from '../database/queries'
 import { getPDFWorkerManager } from '../workers/pdf-manager'
+import { optionalAuthenticate } from '../auth/middleware/auth.middleware'
 
 const router = Router()
 const logger = createLogger('EXHIBITION-API')
@@ -77,7 +78,7 @@ router.get('/model-config', (req, res) => {
 })
 
 // 运行展览设计
-router.post('/exhibition/run', async (req, res) => {
+router.post('/exhibition/run', optionalAuthenticate, async (req, res) => {
   const startTime = Date.now()
   let projectId = ''  // 在try块外定义，以便在catch块中访问
 
@@ -85,13 +86,15 @@ router.post('/exhibition/run', async (req, res) => {
     const requirements: ExhibitionRequirement = req.body
     const maxIterations: number = req.body.maxIterations || 3
     const autoApprove: boolean = req.body.autoApprove !== false  // 默认 true，除非明确指定 false
+    const userId = req.user?.userId  // 获取用户ID（如果已登录）
 
     logger.info('📨 收到展览设计请求', {
       requestId: req.id,
       title: requirements.title,
       theme: requirements.theme.substring(0, 50) + '...',
       budget: `${requirements.budget?.total} ${requirements.budget?.currency}`,
-      maxIterations
+      maxIterations,
+      userId
     })
 
     // 🔑 关键修改：先同步创建项目和数据库记录，获取真实的UUID
@@ -107,7 +110,9 @@ router.post('/exhibition/run', async (req, res) => {
       start_date: requirements.duration?.startDate || '',
       end_date: requirements.duration?.endDate || '',
       special_requirements: JSON.stringify(requirements.specialRequirements || []),
-      status: 'pending'  // 初始状态为pending，启动后改为running
+      status: 'pending',  // 初始状态为pending，启动后改为running
+      user_id: userId,  // 关联用户ID（如果已登录）
+      created_by: userId  // 创建者ID
     })
 
     logger.info('项目已保存到数据库', { projectId: dbProject.id })
@@ -622,8 +627,11 @@ router.get('/exhibition/export/:id', async (req, res) => {
     // 根据格式设置响应
     if (format === 'pdf') {
       // PDF 格式：返回 Buffer
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      const encodedFilename = encodeURIComponent(filename)
+      res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`)
       res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Length', (reportContent as Buffer).length.toString())
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
       res.send(reportContent)
     } else {
       // 其他格式：返回字符串
@@ -754,9 +762,47 @@ async function generateReport(id: string, format: string, forceRegenerate: boole
 
   // 如果是 PDF 格式，将 Markdown 转换为 PDF
   if (format === 'pdf') {
-    logger.info('开始生成 PDF')
+    logger.info('📄 [PDF导出] 开始生成 PDF', {
+      projectId: id,
+      markdownSize: markdown.length,
+      forceRegenerate
+    })
+
+    if (!markdown || markdown.length === 0) {
+      throw new Error('Markdown 内容为空，无法生成 PDF')
+    }
+
     const pdfBuffer = await generatePdfFromMarkdown(markdown, id)
-    logger.info('PDF 生成成功', { size: pdfBuffer.length })
+
+    // 验证 PDF Buffer
+    if (!Buffer.isBuffer(pdfBuffer)) {
+      throw new Error(`PDF 生成失败：返回的不是 Buffer (类型: ${typeof pdfBuffer})`)
+    }
+
+    if (pdfBuffer.length === 0) {
+      throw new Error('PDF 生成失败：Buffer 为空')
+    }
+
+    // 检查 PDF 文件头
+    const headerBytes = pdfBuffer.slice(0, 4)
+    const header = String.fromCharCode(headerBytes[0], headerBytes[1], headerBytes[2], headerBytes[3])
+
+    if (header !== '%PDF') {
+      logger.error('❌ [PDF导出] 生成的文件不是有效的 PDF 格式', {
+        header: header,
+        headerBytes: Array.from(headerBytes),
+        bufferLength: pdfBuffer.length
+      })
+      throw new Error('生成的文件不是有效的 PDF 格式')
+    }
+
+    logger.info('✅ [PDF导出] PDF 生成成功并已验证', {
+      projectId: id,
+      size: pdfBuffer.length,
+      sizeKB: (pdfBuffer.length / 1024).toFixed(2),
+      header: header
+    })
+
     return pdfBuffer
   }
 
@@ -1058,377 +1104,23 @@ async function generatePdfFromMarkdown(markdown: string, projectId: string): Pro
     return result.buffer;
 
   } catch (error) {
-    logger.error('❌ [PDF Worker] PDF 生成失败，尝试降级到主线程', error as Error, {
-      projectId
+    // PDF Worker Manager 内部已处理降级到主线程的逻辑
+    // 如果仍然抛出错误，说明主线程生成也失败了
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error('❌ [PDF导出] PDF 生成彻底失败（包括降级方案）', error as Error, {
+      projectId,
+      markdownLength: markdown?.length || 0,
+      errorMessage,
+      errorStack: process.env.NODE_ENV === 'development' ? errorStack : undefined
     });
 
-    // 降级方案：在主线程生成（Worker 失败时）
-    logger.warn('⚠️ [降级] 使用主线程生成 PDF（可能阻塞请求）');
-    return generatePdfFromMarkdownFallback(markdown);
+    // 向客户端返回更友好的错误信息
+    throw new Error(
+      `PDF 生成失败：${errorMessage}。请联系管理员并提供项目ID: ${projectId}`
+    );
   }
-}
-
-/**
- * PDF 生成降级方案（主线程，用于 Worker 失败时）
- */
-async function generatePdfFromMarkdownFallback(markdown: string): Promise<Buffer> {
-  logger.warn('🔄 [降级方案] 在主线程生成 PDF');
-
-  const { marked } = await import('marked')
-  const puppeteer = await import('puppeteer')
-
-  // 1. 将 Markdown 转换为 HTML
-  const htmlContent = marked(markdown)
-
-  // 2. 创建专业的 HTML 文档（包含完整样式）
-  const fullHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    /* ========== 全局样式 ========== */
-    * {
-      box-sizing: border-box;
-    }
-
-    @page {
-      size: A4;
-      margin: 25mm 15mm 20mm 15mm;
-    }
-
-    body {
-      font-family: 'Microsoft YaHei', '微软雅黑', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      line-height: 1.8;
-      color: #1a1a1a;
-      background: #ffffff;
-      margin: 0;
-      padding: 10px 5px;
-      font-size: 11pt;
-    }
-
-    /* ========== 标题样式 ========== */
-    h1 {
-      color: #1e40af;
-      font-size: 24pt;
-      font-weight: 700;
-      margin: 0 0 25px 0;
-      padding-bottom: 12px;
-      border-bottom: 3px solid #3b82f6;
-      page-break-after: avoid;
-    }
-
-    h2 {
-      color: #1e3a8a;
-      font-size: 18pt;
-      font-weight: 600;
-      margin: 30px 0 15px 0;
-      padding-bottom: 8px;
-      border-bottom: 2px solid #93c5fd;
-      page-break-after: avoid;
-    }
-
-    h3 {
-      color: #1e40af;
-      font-size: 15pt;
-      font-weight: 600;
-      margin: 25px 0 12px 0;
-      padding-left: 12px;
-      border-left: 4px solid #3b82f6;
-      page-break-after: avoid;
-    }
-
-    h4 {
-      color: #2563eb;
-      font-size: 13pt;
-      font-weight: 600;
-      margin: 20px 0 10px 0;
-      page-break-after: avoid;
-    }
-
-    h5 {
-      color: #3b82f6;
-      font-size: 12pt;
-      font-weight: 600;
-      margin: 15px 0 8px 0;
-      page-break-after: avoid;
-    }
-
-    h6 {
-      color: #60a5fa;
-      font-size: 11pt;
-      font-weight: 600;
-      margin: 12px 0 8px 0;
-      page-break-after: avoid;
-    }
-
-    /* ========== 段落样式 ========== */
-    p {
-      margin: 10px 0 15px 0;
-      text-align: justify;
-    }
-
-    /* ========== 列表样式 ========== */
-    ul, ol {
-      margin: 12px 0;
-      padding-left: 30px;
-    }
-
-    li {
-      margin: 8px 0;
-      line-height: 1.7;
-    }
-
-    ul li {
-      list-style-type: disc;
-    }
-
-    ul ul li {
-      list-style-type: circle;
-    }
-
-    ol li {
-      list-style-type: decimal;
-    }
-
-    /* ========== 强调样式 ========== */
-    strong {
-      color: #1e40af;
-      font-weight: 600;
-    }
-
-    b {
-      color: #1e3a8a;
-      font-weight: 600;
-    }
-
-    em {
-      color: #7c3aed;
-      font-style: italic;
-    }
-
-    /* ========== 代码样式 ========== */
-    code {
-      background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-      color: #dc2626;
-      padding: 3px 8px;
-      border-radius: 4px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      font-size: 10pt;
-      border: 1px solid #d1d5db;
-    }
-
-    pre {
-      background: #1f2937;
-      color: #f9fafb;
-      padding: 18px;
-      border-radius: 8px;
-      overflow-x: auto;
-      margin: 18px 0;
-      border: 1px solid #374151;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-
-    pre code {
-      background: transparent;
-      color: #f9fafb;
-      padding: 0;
-      border: none;
-      font-size: 9pt;
-    }
-
-    /* ========== 引用样式 ========== */
-    blockquote {
-      border-left: 5px solid #3b82f6;
-      background: linear-gradient(90deg, #eff6ff 0%, #ffffff 100%);
-      margin: 20px 0;
-      padding: 15px 20px;
-      font-style: italic;
-      color: #4b5563;
-      border-radius: 0 8px 8px 0;
-    }
-
-    blockquote p {
-      margin: 0;
-    }
-
-    /* ========== 表格样式 ========== */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 20px 0;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    th {
-      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-      color: #ffffff;
-      font-weight: 600;
-      padding: 14px 16px;
-      text-align: left;
-      font-size: 11pt;
-    }
-
-    td {
-      padding: 12px 16px;
-      border-bottom: 1px solid #e5e7eb;
-      border-right: 1px solid #f3f4f6;
-    }
-
-    tr:last-child td {
-      border-bottom: none;
-    }
-
-    tr:last-child td:first-child {
-      border-bottom-left-radius: 8px;
-    }
-
-    tr:last-child td:last-child {
-      border-bottom-right-radius: 8px;
-    }
-
-    tr:nth-child(even) {
-      background: #f9fafb;
-    }
-
-    tr:hover {
-      background: #eff6ff;
-    }
-
-    /* ========== 水平线样式 ========== */
-    hr {
-      border: none;
-      height: 2px;
-      background: linear-gradient(90deg, transparent 0%, #3b82f6 50%, transparent 100%);
-      margin: 30px 0;
-    }
-
-    /* ========== 链接样式 ========== */
-    a {
-      color: #2563eb;
-      text-decoration: none;
-      border-bottom: 1px dashed #2563eb;
-    }
-
-    a:hover {
-      color: #1e40af;
-      border-bottom-style: solid;
-    }
-
-    /* ========== 图片样式 ========== */
-    img {
-      max-width: 100%;
-      height: auto;
-      border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      margin: 15px 0;
-    }
-
-    /* ========== 特殊元素样式 ========== */
-    .warning {
-      background: #fef3c7;
-      border-left: 5px solid #f59e0b;
-      padding: 15px 20px;
-      margin: 20px 0;
-      border-radius: 0 8px 8px 0;
-    }
-
-    .info {
-      background: #dbeafe;
-      border-left: 5px solid #3b82f6;
-      padding: 15px 20px;
-      margin: 20px 0;
-      border-radius: 0 8px 8px 0;
-    }
-
-    .success {
-      background: #d1fae5;
-      border-left: 5px solid #10b981;
-      padding: 15px 20px;
-      margin: 20px 0;
-      border-radius: 0 8px 8px 0;
-    }
-
-    /* ========== 打印优化 ========== */
-    @media print {
-      body {
-        padding: 40px 50px;
-      }
-
-      h1, h2, h3, h4 {
-        page-break-after: avoid;
-      }
-
-      table, pre, blockquote {
-        page-break-inside: avoid;
-      }
-    }
-  </style>
-</head>
-<body>
-  ${htmlContent}
-</body>
-</html>
-  `
-
-  // 3. 使用 Puppeteer 生成 PDF
-  const browser = await puppeteer.default.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu'
-    ]
-  })
-
-  const page = await browser.newPage()
-  await page.setContent(fullHtml, { waitUntil: 'networkidle0' })
-
-  const pdfBuffer = await page.pdf({
-    format: 'A4',
-    margin: {
-      top: '30mm',
-      right: '15mm',
-      bottom: '20mm',
-      left: '15mm'
-    },
-    printBackground: true,
-    displayHeaderFooter: true,
-    headerTemplate: `
-      <div style="
-        font-size: 9pt;
-        color: #6b7280;
-        padding: 8px 0;
-        border-bottom: 1px solid #e5e7eb;
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
-      ">
-        <span style="margin-left: 15mm;">展陈设计报告</span>
-        <span style="margin-right: 15mm;" class="date"></span>
-      </div>
-    `,
-    footerTemplate: `
-      <div style="
-        font-size: 8pt;
-        color: #9ca3af;
-        padding: 8px 0;
-        border-top: 1px solid #e5e7eb;
-        width: 100%;
-        text-align: center;
-      ">
-        第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页
-      </div>
-    `,
-    preferCSSPageSize: true
-  })
-
-  await browser.close()
-
-  return Buffer.from(pdfBuffer)
 }
 
 // 获取内容类型

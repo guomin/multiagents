@@ -9,6 +9,10 @@ export class SupervisorAgent {
   private llm: ChatOpenAI;
   private modelConfig: ModelConfig;
   private logger = createLogger('SUPERVISOR-AGENT');
+  // 降级统计
+  private fallbackCount = 0;
+  private readonly FALLBACK_LOG_THRESHOLD = 5;
+  private readonly FALLBACK_STATS_INTERVAL = 100;
 
   constructor(modelName?: string, temperature: number = 0.5) {
     this.logger.info('🛡️ 初始化监督智能体', { modelName, temperature });
@@ -430,11 +434,15 @@ ${state.budgetEstimate.recommendations.map(r => `  - ${r}`).join("\n")}
         return evaluation as QualityEvaluation;
       }
     } catch (error) {
-      console.warn("无法解析质量评估结果，使用默认值");
+      // 使用降级日志统计方法
+      this.logFallback('⚠️ [降级方案] 质量评估 JSON 解析失败，使用默认值', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        responsePreview: responseText.substring(0, 200)
+      });
     }
 
-    // 默认评估结果
-    return {
+    // 默认评估结果（降级方案）
+    const defaultEvaluation = {
       overallScore: 0.7,
       conceptScore: state.conceptPlan ? 0.7 : 0,
       outlineScore: state.exhibitionOutline ? 0.7 : 0,
@@ -445,6 +453,38 @@ ${state.budgetEstimate.recommendations.map(r => `  - ${r}`).join("\n")}
       feedback: "无法解析详细评估，使用默认分数",
       revisionTarget: "none"
     };
+
+    this.logger.warn('⚠️ [降级方案] 使用默认质量评估结果', {
+      fallbackResult: JSON.stringify(defaultEvaluation, null, 2)
+    });
+
+    return defaultEvaluation;
+  }
+
+  /**
+   * 降级日志统计方法（防止日志洪泛）
+   */
+  private logFallback(message: string, data?: any): void {
+    this.fallbackCount++;
+
+    // 前 N 次正常输出日志
+    if (this.fallbackCount <= this.FALLBACK_LOG_THRESHOLD) {
+      this.logger.warn(message, data);
+    }
+    // 第 N+1 次输出警告
+    else if (this.fallbackCount === this.FALLBACK_LOG_THRESHOLD + 1) {
+      this.logger.warn('⚠️ [降级警告] 降级日志过于频繁，后续将抑制输出', {
+        totalFallbacks: this.fallbackCount,
+        message: '后续降级日志将每 ' + this.FALLBACK_STATS_INTERVAL + ' 次输出一次统计'
+      });
+    }
+    // 每隔 N 次输出统计
+    else if (this.fallbackCount % this.FALLBACK_STATS_INTERVAL === 0) {
+      this.logger.warn('📊 [降级统计] 累计降级次数', {
+        totalFallbacks: this.fallbackCount,
+        recentMessage: message
+      });
+    }
   }
 
   /**
