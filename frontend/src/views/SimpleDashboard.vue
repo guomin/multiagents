@@ -4,12 +4,56 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <div class="header-icon">
-            <ElIcon :size="32"><OfficeBuilding /></ElIcon>
+          <div class="header-logo">
+            <svg viewBox="0 0 48 48" class="logo-svg">
+              <!-- 背景圆形 -->
+              <defs>
+                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
+                </linearGradient>
+              </defs>
+
+              <!-- 展览馆建筑轮廓 -->
+              <path d="M8 40 L8 20 L24 8 L40 20 L40 40"
+                    fill="none"
+                    stroke="url(#logoGradient)"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"/>
+
+              <!-- 内部柱子 -->
+              <line x1="14" y1="24" x2="14" y2="36" stroke="url(#logoGradient)" stroke-width="2" stroke-linecap="round"/>
+              <line x1="24" y1="24" x2="24" y2="36" stroke="url(#logoGradient)" stroke-width="2" stroke-linecap="round"/>
+              <line x1="34" y1="24" x2="34" y2="36" stroke="url(#logoGradient)" stroke-width="2" stroke-linecap="round"/>
+
+              <!-- AI 元素 - 电路节点 -->
+              <circle cx="24" cy="16" r="3" fill="url(#accentGradient)"/>
+              <circle cx="14" cy="24" r="2" fill="url(#accentGradient)"/>
+              <circle cx="34" cy="24" r="2" fill="url(#accentGradient)"/>
+
+              <!-- AI 连接线 -->
+              <path d="M14 24 L24 16 L34 24"
+                    fill="none"
+                    stroke="url(#accentGradient)"
+                    stroke-width="1.5"
+                    stroke-linecap="round"/>
+
+              <!-- AI 核心 - 中央节点 -->
+              <circle cx="24" cy="30" r="4" fill="url(#accentGradient)"/>
+              <circle cx="24" cy="30" r="2" fill="#fff"/>
+
+              <!-- 底部基座 -->
+              <rect x="6" y="40" width="36" height="3" rx="1" fill="url(#logoGradient)"/>
+            </svg>
           </div>
           <div class="header-text">
-            <h1 class="page-title">展陈设计多智能体系统</h1>
-            <p class="page-subtitle">基于 LangGraph 和 DeepSeek 的智能协作平台</p>
+            <h1 class="page-title">ExhibitionAI</h1>
+            <p class="page-subtitle">展陈设计多智能体系统</p>
           </div>
         </div>
         <div class="header-actions">
@@ -89,6 +133,11 @@
         </div>
         <div class="stat-badge" v-if="stats.error > 0">需处理</div>
       </div>
+    </div>
+
+    <!-- 3D 展览展示 -->
+    <div class="section-3d">
+      <Exhibition3D />
     </div>
 
     <!-- 快速操作 -->
@@ -202,8 +251,8 @@ import { useRouter } from 'vue-router'
 import { useExhibitionStore } from '@/stores/exhibition'
 import { exhibitionAPI } from '@/api/exhibition'
 import { ElMessage } from 'element-plus'
+import Exhibition3D from '@/components/Exhibition3D.vue'
 import {
-  OfficeBuilding,
   Plus,
   Folder,
   CircleCheck,
@@ -344,29 +393,72 @@ onMounted(async () => {
   gap: 20px;
 }
 
-.header-icon {
-  width: 56px;
-  height: 56px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 12px;
+.header-logo {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.header-logo::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.header-logo:hover::before {
+  opacity: 1;
+}
+
+.header-logo:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+}
+
+.logo-svg {
+  width: 42px;
+  height: 42px;
+  position: relative;
+  z-index: 1;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1f2937;
-  margin: 0 0 4px 0;
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
 .page-subtitle {
   font-size: 14px;
   color: #6b7280;
   margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 /* 统计卡片 */
@@ -486,6 +578,12 @@ onMounted(async () => {
 
 .stat-red .stat-badge {
   background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%);
+}
+
+/* 3D 展览展示 */
+.section-3d {
+  margin-bottom: 24px;
+  animation: fadeInUp 0.6s ease-out 0.2s both;
 }
 
 /* 快速操作 */

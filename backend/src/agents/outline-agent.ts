@@ -28,11 +28,13 @@ export class OutlineAgent {
     this.logger.info('📋 初始化大纲细化智能体', { modelName, temperature });
 
     try {
-      this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
+      // 使用智能体专属配置（支持OUTLINE_AGENT_MAX_TOKENS）
+      this.modelConfig = ModelConfigFactory.createModelConfigForAgent("outline", modelName, temperature);
       this.logger.info('模型配置创建成功', {
         provider: this.modelConfig.provider,
         modelName: this.modelConfig.modelName,
-        temperature: this.modelConfig.temperature
+        temperature: this.modelConfig.temperature,
+        maxTokens: this.modelConfig.maxTokens || 'default'
       });
 
       this.llm = new ChatOpenAI({
@@ -40,7 +42,8 @@ export class OutlineAgent {
         temperature: this.modelConfig.temperature,
         openAIApiKey: this.modelConfig.apiKey,
         ...(this.modelConfig.baseURL && { configuration: { baseURL: this.modelConfig.baseURL } }),
-        ...(this.modelConfig.organization && { openAIOrganization: this.modelConfig.organization })
+        ...(this.modelConfig.organization && { openAIOrganization: this.modelConfig.organization }),
+        ...(this.modelConfig.maxTokens && { maxTokens: this.modelConfig.maxTokens })
       });
 
       this.logger.info('✅ LLM客户端初始化完成');
@@ -51,7 +54,7 @@ export class OutlineAgent {
   }
 
   /**
-   * 生成展览详细大纲
+   * 生成展览详细大纲（分段生成，避免输出截断）
    *
    * @param requirements - 用户原始需求
    * @param conceptPlan - 概念策划方案（来自策展智能体）
@@ -62,10 +65,10 @@ export class OutlineAgent {
     conceptPlan: ConceptPlan
   ): Promise<ExhibitionOutline> {
     const startTime = Date.now();
-    console.log('📋 [大纲细化智能体] 开始生成展览大纲...');
+    console.log('📋 [大纲细化智能体] 开始生成展览大纲（分段模式）...');
 
     this.logger.info('═══════════════════════════════════════════════════════════');
-    this.logger.info('📋 [大纲细化智能体] 开始生成展览大纲');
+    this.logger.info('📋 [大纲细化智能体] 开始生成展览大纲（分段生成模式）');
     this.logger.info('═══════════════════════════════════════════════════════════');
 
     try {
@@ -88,63 +91,44 @@ export class OutlineAgent {
         visitorFlow: conceptPlan.visitorFlow
       });
 
-      // 使用 PromptManager 渲染 prompt
-      const rendered = promptManager.render(
-        'outline',
-        'generateOutline',
-        {
-          // 展览基本信息
-          title: requirements.title,
-          theme: requirements.theme,
-          targetAudience: requirements.targetAudience,
-          totalBudget: requirements.budget.total,
-          currency: requirements.budget.currency,
-          totalArea: requirements.venueSpace.area,
-          height: requirements.venueSpace.height,
-          layout: requirements.venueSpace.layout,
-          startDate: requirements.duration.startDate,
-          endDate: requirements.duration.endDate,
+      // 🔷 分段1: 生成展区划分 (zones)
+      this.logger.info('🔷 [分段1/3] 开始生成展区划分...');
+      const zones = await this.generateZones(requirements, conceptPlan);
+      this.logger.info('✅ [分段1/3] 展区划分生成完成', { zonesCount: zones.length });
 
-          // 策划方案信息
-          concept: conceptPlan.concept,
-          narrative: conceptPlan.narrative,
-          keyExhibits: conceptPlan.keyExhibits.join("；"),
-          visitorFlow: conceptPlan.visitorFlow
-        }
+      // 🔷 分段2: 生成展品和互动装置 (exhibits + interactivePlan)
+      this.logger.info('🔷 [分段2/3] 开始生成展品和互动装置...');
+      const { exhibits, interactivePlan } = await this.generateExhibitsAndInteractive(
+        requirements,
+        conceptPlan,
+        zones
       );
-
-      const systemPrompt = rendered.system;
-      const humanPrompt = rendered.human;
-
-      this.logger.info('📝 [提示词] Prompt 版本', {
-        version: `${rendered.version.major}.${rendered.version.minor}.${rendered.version.patch}`,
-        systemPromptLength: systemPrompt.length,
-        humanPromptLength: humanPrompt.length
+      this.logger.info('✅ [分段2/3] 展品和互动装置生成完成', {
+        exhibitsCount: exhibits.length,
+        interactivePlanCount: interactivePlan.length
       });
 
-      const messages = [
-        new SystemMessage(systemPrompt),
-        new HumanMessage(humanPrompt)
-      ];
-
-      this.logger.info('🤖 [LLM调用] 准备调用大模型', {
-        model: this.modelConfig.modelName,
-        temperature: this.modelConfig.temperature
+      // 🔷 分段3: 生成预算和空间约束 (budgetAllocation + spaceConstraints)
+      this.logger.info('🔷 [分段3/3] 开始生成预算和空间约束...');
+      const { budgetAllocation, spaceConstraints } = await this.generateBudgetAndSpace(
+        requirements,
+        conceptPlan,
+        zones
+      );
+      this.logger.info('✅ [分段3/3] 预算和空间约束生成完成', {
+        budgetTotal: budgetAllocation.total,
+        spaceTotalArea: spaceConstraints.totalArea
       });
 
-      const llmStart = Date.now();
-      const response = await this.llm.invoke(messages);
-      const llmDuration = Date.now() - llmStart;
-
-      this.logger.info('🤖 [LLM调用] 大模型响应完成', {
-        llmDuration: `${llmDuration}ms`,
-        responseLength: response.content.toString().length
-      });
-
-      const rawContent = response.content.toString();
-
-      // 解析LLM响应
-      const outline = this.parseOutline(rawContent, conceptPlan);
+      // 📦 组装最终大纲
+      const outline: ExhibitionOutline = {
+        conceptPlan,
+        zones,
+        exhibits,
+        interactivePlan,
+        budgetAllocation,
+        spaceConstraints
+      };
 
       // 📤 输出日志
       this.logger.info('📤 [最终输出] 展览大纲', {
@@ -161,7 +145,7 @@ export class OutlineAgent {
       this.logger.info('✅ [大纲细化智能体] 展览大纲生成完成', {
         success: true,
         totalDuration: `${finalDuration}ms`,
-        llmDuration: `${llmDuration}ms`
+        mode: '分段生成'
       });
       this.logger.info('═══════════════════════════════════════════════════════════');
 
@@ -173,6 +157,124 @@ export class OutlineAgent {
         theme: requirements?.theme
       });
       throw error;
+    }
+  }
+
+  /**
+   * 分段1: 生成展区划分
+   */
+  private async generateZones(
+    requirements: ExhibitionRequirement,
+    conceptPlan: ConceptPlan
+  ): Promise<any[]> {
+    const rendered = promptManager.render('outline', 'generateZones', {
+      title: requirements.title,
+      theme: requirements.theme,
+      totalArea: requirements.venueSpace.area,
+      concept: conceptPlan.concept,
+      narrative: conceptPlan.narrative,
+      visitorFlow: conceptPlan.visitorFlow,
+      outlineDraft: requirements.outlineDraft || ''
+    });
+
+    const response = await this.llm.invoke([
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
+    ]);
+
+    this.checkFinishReason(response);
+
+    const rawContent = response.content.toString();
+    const cleaned = this.extractJSON(rawContent);
+    const parsed = JSON.parse(cleaned);
+
+    return parsed.zones || [];
+  }
+
+  /**
+   * 分段2: 生成展品和互动装置
+   */
+  private async generateExhibitsAndInteractive(
+    requirements: ExhibitionRequirement,
+    conceptPlan: ConceptPlan,
+    zones: any[]
+  ): Promise<{ exhibits: any[]; interactivePlan: any[] }> {
+    const rendered = promptManager.render('outline', 'generateExhibitsAndInteractive', {
+      title: requirements.title,
+      theme: requirements.theme,
+      totalBudget: requirements.budget.total,
+      keyExhibits: conceptPlan.keyExhibits.join("；"),
+      zones: zones.map(z => `${z.id}:${z.name}(${z.area}㎡)`).join("；")
+    });
+
+    const response = await this.llm.invoke([
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
+    ]);
+
+    this.checkFinishReason(response);
+
+    const rawContent = response.content.toString();
+    const cleaned = this.extractJSON(rawContent);
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      exhibits: parsed.exhibits || [],
+      interactivePlan: parsed.interactivePlan || []
+    };
+  }
+
+  /**
+   * 分段3: 生成预算和空间约束
+   */
+  private async generateBudgetAndSpace(
+    requirements: ExhibitionRequirement,
+    conceptPlan: ConceptPlan,
+    zones: any[]
+  ): Promise<{ budgetAllocation: any; spaceConstraints: any }> {
+    const rendered = promptManager.render('outline', 'generateBudgetAndSpace', {
+      totalBudget: requirements.budget.total,
+      totalArea: requirements.venueSpace.area,
+      zones: zones.map(z => `${z.id}:${z.name}(${z.area}㎡,${z.percentage}%)`).join("；")
+    });
+
+    const response = await this.llm.invoke([
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
+    ]);
+
+    this.checkFinishReason(response);
+
+    const rawContent = response.content.toString();
+    const cleaned = this.extractJSON(rawContent);
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      budgetAllocation: parsed.budgetAllocation || { total: requirements.budget.total, breakdown: [] },
+      spaceConstraints: parsed.spaceConstraints || {
+        totalArea: requirements.venueSpace.area,
+        minZoneCount: 3,
+        maxZoneCount: 6,
+        minAisleWidth: 1.8,
+        mainZoneRatio: 0.4
+      }
+    };
+  }
+
+  /**
+   * 检查finish_reason并记录日志
+   */
+  private checkFinishReason(response: any): void {
+    const finishReason = response.response_metadata?.finish_reason;
+    if (finishReason) {
+      if (finishReason === 'length') {
+        this.logger.error('⚠️ [输出截断] LLM输出因达到maxTokens限制而被截断', {
+          finishReason,
+          maxTokens: this.modelConfig.maxTokens || 'default'
+        });
+      } else {
+        this.logger.info('✅ [输出状态]', { finishReason });
+      }
     }
   }
 
@@ -213,26 +315,25 @@ export class OutlineAgent {
    * 解析LLM输出的展览大纲
    */
   private parseOutline(rawContent: string, conceptPlan: ConceptPlan): ExhibitionOutline {
-    this.logger.info('🔧 [解析开始] 开始解析LLM响应');
+    this.logger.info('🔧 [解析开始] 开始解析LLM响应', {
+      contentLength: rawContent.length,
+      preview: rawContent.substring(0, 200)
+    });
 
     try {
-      // 清理markdown代码块标记
-      let cleanedContent = rawContent.trim();
+      // 步骤1：提取JSON内容
+      let cleanedContent = this.extractJSON(rawContent);
 
-      if (cleanedContent.startsWith('```json')) {
-        cleanedContent = cleanedContent.slice(7);
-      } else if (cleanedContent.startsWith('```')) {
-        cleanedContent = cleanedContent.slice(3);
-      }
+      this.logger.info('🔧 [JSON提取] 提取完成', {
+        cleanedLength: cleanedContent.length,
+        originalLength: rawContent.length
+      });
 
-      if (cleanedContent.endsWith('```')) {
-        cleanedContent = cleanedContent.slice(0, -3);
-      }
-
-      cleanedContent = cleanedContent.trim();
-
-      // 解析JSON
+      // 步骤2：尝试解析JSON
       const parsed = JSON.parse(cleanedContent);
+
+      // 步骤3：验证必需字段
+      this.validateParsedData(parsed);
 
       // 构建ExhibitionOutline对象
       const outline: ExhibitionOutline = {
@@ -269,11 +370,86 @@ export class OutlineAgent {
       return outline;
 
     } catch (parseError) {
-      this.logger.error('❌ [解析失败] 解析失败，使用默认大纲', parseError as Error);
+      this.logger.error('❌ [解析失败] JSON解析失败', parseError as Error, {
+        errorType: parseError.constructor.name,
+        errorMessage: (parseError as Error).message,
+        contentPreview: rawContent.substring(0, 500)
+      });
 
       // 返回默认大纲
       return this.getDefaultOutline(conceptPlan);
     }
+  }
+
+  /**
+   * 从LLM响应中提取JSON内容
+   */
+  private extractJSON(content: string): string {
+    let cleaned = content.trim();
+
+    // 方法1：查找markdown代码块
+    const jsonCodeBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/;
+    const codeBlockMatch = cleaned.match(jsonCodeBlockRegex);
+    if (codeBlockMatch) {
+      this.logger.info('📝 [提取方法] 使用Markdown代码块提取');
+      return codeBlockMatch[1].trim();
+    }
+
+    // 方法2：查找第一个{和最后一个}之间的内容
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      this.logger.info('📝 [提取方法] 使用大括号范围提取', {
+        firstBrace,
+        lastBrace,
+        extractedLength: lastBrace - firstBrace + 1
+      });
+      return cleaned.substring(firstBrace, lastBrace + 1);
+    }
+
+    // 方法3：直接使用清理后的内容
+    this.logger.warn('⚠️ [提取方法] 未找到JSON标记，使用原始内容');
+    return cleaned;
+  }
+
+  /**
+   * 验证解析后的数据
+   */
+  private validateParsedData(parsed: any): void {
+    const errors: string[] = [];
+
+    // 检查是否有至少一个有效字段
+    if (!parsed.zones && !parsed.exhibits && !parsed.interactivePlan) {
+      errors.push('缺少必需字段：zones, exhibits, 或 interactivePlan');
+    }
+
+    // 验证zones（如果存在）
+    if (parsed.zones && Array.isArray(parsed.zones)) {
+      if (parsed.zones.length === 0) {
+        errors.push('zones数组为空');
+      }
+      parsed.zones.forEach((zone: any, index: number) => {
+        if (!zone.id) errors.push(`zones[${index}].id 缺失`);
+        if (!zone.name) errors.push(`zones[${index}].name 缺失`);
+        if (typeof zone.area !== 'number') errors.push(`zones[${index}].area 不是数字`);
+      });
+    }
+
+    // 验证exhibits（如果存在）
+    if (parsed.exhibits && Array.isArray(parsed.exhibits)) {
+      parsed.exhibits.forEach((exhibit: any, index: number) => {
+        if (!exhibit.id) errors.push(`exhibits[${index}].id 缺失`);
+        if (!exhibit.name) errors.push(`exhibits[${index}].name 缺失`);
+        if (!exhibit.zoneId) errors.push(`exhibits[${index}].zoneId 缺失`);
+      });
+    }
+
+    if (errors.length > 0) {
+      throw new Error(`数据验证失败：\n${errors.join('\n')}`);
+    }
+
+    this.logger.info('✅ [数据验证] 验证通过');
   }
 
   /**

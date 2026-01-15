@@ -6,8 +6,53 @@
       <p>正在加载项目数据...</p>
     </div>
 
+    <!-- 导出进度对话框 -->
+    <ElDialog
+      v-model="exportProgress.visible"
+      title="导出报告"
+      width="500px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <div class="export-progress-content">
+        <!-- 进度动画 -->
+        <div class="progress-animation">
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+        </div>
+
+        <!-- 进度文本 -->
+        <div class="progress-text">
+          <h3>{{ exportProgress.title }}</h3>
+          <p>{{ exportProgress.message }}</p>
+        </div>
+
+        <!-- 进度条 -->
+        <div v-if="exportProgress.showProgress" class="progress-bar-wrapper">
+          <ElProgress
+            :percentage="exportProgress.percentage"
+            :status="exportProgress.status"
+            :stroke-width="12"
+            :indeterminate="exportProgress.indeterminate"
+          >
+            <template #default="{ percentage }">
+              <span class="progress-percentage">{{ percentage }}%</span>
+            </template>
+          </ElProgress>
+        </div>
+
+        <!-- 预计时间 -->
+        <div v-if="exportProgress.estimatedTime" class="estimated-time">
+          <ElIcon><Clock /></ElIcon>
+          <span>预计需要 {{ exportProgress.estimatedTime }}</span>
+        </div>
+      </div>
+    </ElDialog>
+
     <!-- 页面内容 -->
-    <div v-else-if="currentWorkflow">
+    <div v-if="!loading && currentWorkflow">
       <!-- 页面头部 -->
       <div class="page-header">
         <div class="header-content">
@@ -398,7 +443,7 @@
     </div>
 
     <!-- 无数据提示 -->
-    <div v-else class="empty-state">
+    <div v-if="!loading && !currentWorkflow" class="empty-state">
       <ElIcon class="empty-icon"><Warning /></ElIcon>
       <h3>未找到项目数据</h3>
       <p>该项目可能不存在或已被删除</p>
@@ -434,7 +479,8 @@ import {
   Star,
   Menu,
   EditPen,
-  Link
+  Link,
+  Clock
 } from '@element-plus/icons-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -460,6 +506,21 @@ const route = useRoute()
 const exhibitionStore = useExhibitionStore()
 
 const loading = ref(true)
+
+// 导出进度状态
+const exportProgress = ref({
+  visible: false,
+  title: '',
+  message: '',
+  percentage: 0,
+  status: '' as '' | 'success' | 'exception' | 'warning',
+  showProgress: false,
+  indeterminate: true,
+  estimatedTime: ''
+})
+
+// 导出进度定时器
+let exportProgressTimer: ReturnType<typeof setInterval> | null = null
 
 // 从 JSON 字符串中提取字段值
 const extractFromJsonString = (jsonString: string, fieldName: string): string => {
@@ -896,36 +957,118 @@ const createNewProject = () => {
 
 // 处理导出命令
 const handleExportCommand = async (command: string) => {
-  try {
-    const projectId = route.params.id as string
+  const projectId = route.params.id as string
 
-    if (!projectId) {
-      ElMessage.error('项目ID不存在')
-      return
+  if (!projectId) {
+    ElMessage.error('项目ID不存在')
+    return
+  }
+
+  let format: 'pdf' | 'markdown' = 'markdown'
+  let forceRegenerate = false
+
+  // 根据命令设置参数和进度信息
+  if (command === 'pdf-force') {
+    format = 'pdf'
+    forceRegenerate = true
+
+    // 显示强制重新生成 PDF 的进度
+    exportProgress.value = {
+      visible: true,
+      title: '正在重新生成 PDF 报告',
+      message: '正在从设计数据生成 PDF 文档，请稍候...',
+      percentage: 0,
+      status: '',
+      showProgress: true,
+      indeterminate: true,
+      estimatedTime: '30-60 秒'
     }
+  } else if (command === 'pdf') {
+    format = 'pdf'
 
-    let format: 'pdf' | 'markdown' = 'markdown'
-    let forceRegenerate = false
+    // 显示导出 PDF 的进度
+    exportProgress.value = {
+      visible: true,
+      title: '正在导出 PDF 报告',
+      message: '正在准备 PDF 文档，请稍候...',
+      percentage: 0,
+      status: '',
+      showProgress: true,
+      indeterminate: true,
+      estimatedTime: '10-30 秒'
+    }
+  } else {
+    // 显示导出 Markdown 的进度
+    exportProgress.value = {
+      visible: true,
+      title: '正在导出 Markdown 报告',
+      message: '正在准备 Markdown 文档，请稍候...',
+      percentage: 0,
+      status: '',
+      showProgress: true,
+      indeterminate: true,
+      estimatedTime: '5-10 秒'
+    }
+  }
 
-    if (command === 'pdf-force') {
-      format = 'pdf'
-      forceRegenerate = true
-      ElMessage.info('正在强制重新生成 PDF 报告（可能需要较长时间）...')
-    } else if (command === 'pdf') {
-      format = 'pdf'
-      ElMessage.info('正在导出 PDF 报告...')
+  // 模拟进度更新（PDF 生成通常需要较长时间）
+  let currentProgress = 0
+  const progressInterval = 500 // 每 500ms 更新一次
+
+  exportProgressTimer = setInterval(() => {
+    if (format === 'pdf') {
+      // PDF 进度模拟
+      if (currentProgress < 30) {
+        currentProgress += Math.random() * 5
+        exportProgress.value.message = '正在收集设计数据...'
+      } else if (currentProgress < 60) {
+        currentProgress += Math.random() * 3
+        exportProgress.value.message = '正在生成 PDF 文档...'
+      } else if (currentProgress < 90) {
+        currentProgress += Math.random() * 2
+        exportProgress.value.message = '正在优化 PDF 格式...'
+      } else {
+        // 到达 90% 后停止，等待实际完成
+        exportProgress.value.indeterminate = true
+        exportProgress.value.message = '即将完成...'
+        clearInterval(exportProgressTimer!)
+      }
     } else {
-      ElMessage.info('正在导出 Markdown 报告...')
+      // Markdown 很快完成
+      if (currentProgress < 80) {
+        currentProgress += 20
+      }
     }
 
+    exportProgress.value.percentage = Math.min(Math.floor(currentProgress), 95)
+  }, progressInterval)
+
+  try {
     // 调用 API 导出报告
     const blob = await exhibitionAPI.exportReport(projectId, format, forceRegenerate)
+
+    // 清除进度定时器
+    if (exportProgressTimer) {
+      clearInterval(exportProgressTimer)
+      exportProgressTimer = null
+    }
+
+    // 更新为成功状态
+    exportProgress.value.percentage = 100
+    exportProgress.value.status = 'success'
+    exportProgress.value.indeterminate = false
+    exportProgress.value.message = '导出成功！正在下载文件...'
+
+    // 延迟关闭对话框
+    setTimeout(() => {
+      exportProgress.value.visible = false
+    }, 1500)
 
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `exhibition-report-${projectId}.${format}`
+    link.download = `exhibition-report-${projectId}.${format === 'markdown' ? 'md' : 'pdf'}`
 
     // 触发下载
     document.body.appendChild(link)
@@ -935,9 +1078,33 @@ const handleExportCommand = async (command: string) => {
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success(`${format.toUpperCase()} 报告导出成功`)
-  } catch (error) {
+    ElMessage.success(`${format === 'pdf' ? 'PDF' : 'Markdown'} 报告导出成功`)
+  } catch (error: any) {
     console.error('导出报告失败:', error)
+
+    // 清除进度定时器
+    if (exportProgressTimer) {
+      clearInterval(exportProgressTimer)
+      exportProgressTimer = null
+    }
+
+    // 更新为错误状态
+    exportProgress.value.percentage = 0
+    exportProgress.value.status = 'exception'
+    exportProgress.value.indeterminate = false
+
+    // 根据错误类型显示不同消息
+    if (error.message?.includes('超时')) {
+      exportProgress.value.message = '导出超时，PDF 生成时间过长。请稍后重试或尝试使用 Markdown 格式。'
+    } else {
+      exportProgress.value.message = `导出失败: ${error.message || '未知错误'}`
+    }
+
+    // 延迟关闭对话框
+    setTimeout(() => {
+      exportProgress.value.visible = false
+    }, 3000)
+
     ElMessage.error('导出失败，请重试')
   }
 }
@@ -1727,5 +1894,150 @@ onMounted(async () => {
   .overview-section {
     grid-template-columns: 1fr;
   }
+}
+
+/* 导出进度对话框样式 */
+.export-progress-content {
+  padding: 1rem 0;
+  text-align: center;
+}
+
+/* 进度动画 */
+.progress-animation {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  animation: spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+}
+
+.spinner-ring:nth-child(1) {
+  border-top-color: #3b82f6;
+  width: 100%;
+  height: 100%;
+  animation-delay: 0s;
+}
+
+.spinner-ring:nth-child(2) {
+  border-right-color: #8b5cf6;
+  width: 75%;
+  height: 75%;
+  animation-delay: 0.15s;
+  animation-direction: reverse;
+}
+
+.spinner-ring:nth-child(3) {
+  border-bottom-color: #ec4899;
+  width: 50%;
+  height: 50%;
+  animation-delay: 0.3s;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 进度文本 */
+.progress-text {
+  margin-bottom: 2rem;
+}
+
+.progress-text h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 0.75rem 0;
+}
+
+.progress-text p {
+  font-size: 0.9375rem;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* 进度条包装器 */
+.progress-bar-wrapper {
+  margin-bottom: 1.5rem;
+  padding: 0 1rem;
+}
+
+.progress-percentage {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+/* 预计时间 */
+.estimated-time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #f3f4f6;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 0 auto;
+  max-width: fit-content;
+}
+
+.estimated-time .el-icon {
+  color: #9ca3af;
+  font-size: 1rem;
+}
+
+/* 对话框样式优化 */
+:deep(.el-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+:deep(.el-dialog__header) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1.25rem 1.5rem;
+  margin: 0;
+}
+
+:deep(.el-dialog__title) {
+  color: white;
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+:deep(.el-dialog__body) {
+  padding: 1.5rem;
+}
+
+/* 进度条颜色定制 */
+:deep(.el-progress-bar__inner) {
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+  transition: all 0.3s ease;
+}
+
+:deep(.el-progress.is-success .el-progress-bar__inner) {
+  background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+}
+
+:deep(.el-progress.is-exception .el-progress-bar__inner) {
+  background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
 }
 </style>

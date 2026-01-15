@@ -396,6 +396,66 @@
                     />
                   </ElFormItem>
                 </div>
+
+                <!-- 大纲草稿 -->
+                <div class="config-section">
+                  <h4 class="config-title">
+                    <ElIcon><DocumentCopy /></ElIcon>
+                    大纲草稿（可选）
+                  </h4>
+                  <div class="outline-draft-tip">
+                    <ElIcon><InfoFilled /></ElIcon>
+                    <span>如果您有初步的大纲思路或模板，可以在此输入。AI会在此基础上进行完善和细化。</span>
+                  </div>
+                  <ElFormItem label="大纲草稿">
+                    <ElInput
+                      v-model="formData.outlineDraft"
+                      type="textarea"
+                      :rows="10"
+                      placeholder="示例格式：&#10;&#10;展区1：历史溯源（30%）&#10;- 展示古代水利工程的发展历程&#10;- 重点展品：都江堰模型、古代水车、水车图&#10;- 互动装置：水流模拟器&#10;&#10;展区2：科技创新（40%）&#10;- 现代水利技术展示&#10;- 互动体验：虚拟水流控制台"
+                      show-word-limit
+                      :maxlength="20000"
+                    />
+                  </ElFormItem>
+                  <div class="draft-examples">
+                    <div class="example-title">或者上传大纲文件：</div>
+                    <ElUpload
+                      drag
+                      :auto-upload="false"
+                      @change="handleOutlineUpload"
+                      accept=".txt,.md"
+                      :show-file-list="false"
+                    >
+                      <ElIcon class="el-icon--upload"><UploadFilled /></ElIcon>
+                      <div class="el-upload__text">
+                        拖拽文件到此处或<em>点击上传</em>
+                      </div>
+                      <template #tip>
+                        <div class="el-upload__tip">
+                          支持 .txt、.md 格式的大纲模板文件
+                        </div>
+                      </template>
+                    </ElUpload>
+                  </div>
+                </div>
+
+                <!-- 单步调试模式 -->
+                <div class="config-section">
+                  <h4 class="config-title">
+                    <ElIcon><Setting /></ElIcon>
+                    调试选项
+                  </h4>
+                  <ElFormItem label="单步调试模式">
+                    <ElSwitch
+                      v-model="formData.stepByStepMode"
+                      active-text="开启"
+                      inactive-text="关闭"
+                    />
+                    <div class="tip-text">
+                      开启后，将在大纲细化完成后暂停，便于检查和调试。检查完成后可点击"继续执行"完成剩余流程。
+                    </div>
+                  </ElFormItem>
+                </div>
               </ElForm>
             </div>
           </div>
@@ -561,7 +621,8 @@ import {
   Briefcase,
   UserFilled,
   TrendCharts,
-  MagicStick
+  MagicStick,
+  UploadFilled
 } from '@element-plus/icons-vue'
 import type { ExhibitionRequirement } from '@/types/exhibition'
 
@@ -620,7 +681,9 @@ const formData = reactive<ExhibitionRequirement>({
     endDate: formatDateForInput(nextWeek)
   },
   specialRequirements: [],
-  maxIterations: 3
+  outlineDraft: '',
+  maxIterations: 3,
+  stepByStepMode: false
 })
 
 // 表单验证规则
@@ -770,6 +833,28 @@ const toggleRequirement = (id: string) => {
   } else {
     formData.specialRequirements.push(id)
   }
+}
+
+// 处理大纲文件上传
+const handleOutlineUpload = (file: any) => {
+  const uploadedFile = file.raw
+  const reader = new FileReader()
+
+  reader.onload = (e) => {
+    const content = e.target?.result as string
+    if (content && content.length > 0) {
+      formData.outlineDraft = content
+      ElMessage.success(`已加载大纲文件：${uploadedFile.name}`)
+    } else {
+      ElMessage.error('文件内容为空，请检查文件')
+    }
+  }
+
+  reader.onerror = () => {
+    ElMessage.error('文件读取失败，请重试')
+  }
+
+  reader.readAsText(uploadedFile, 'UTF-8')
 }
 
 const formatCurrency = (amount: number) => {
@@ -1210,6 +1295,49 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 500;
   color: #374151;
+}
+
+/* 大纲草稿样式 */
+.outline-draft-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-radius: 8px;
+  border-left: 4px solid #f59e0b;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.6;
+}
+
+.outline-draft-tip .el-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 16px;
+}
+
+.tip-text {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.draft-examples {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px dashed #d1d5db;
+}
+
+.example-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 12px;
 }
 
 /* 表单操作 */

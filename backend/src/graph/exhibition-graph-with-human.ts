@@ -7,7 +7,7 @@ import { VisualDesignerAgent } from "../agents/visual-designer";
 import { InteractiveTechAgent } from "../agents/interactive-tech";
 import { BudgetControllerAgent } from "../agents/budget-controller";
 import { SupervisorAgent } from "../agents/supervisor";
-import { broadcastAgentStatus, broadcastProgress, broadcastLog, broadcastWaitingForHuman, broadcastIterationUpdate } from "../index";
+import { broadcastAgentStatus, broadcastProgress, broadcastLog, broadcastWaitingForHuman, broadcastIterationUpdate, broadcastStepByStepPause } from "../index";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger('EXHIBITION-GRAPH-HUMAN');
@@ -94,6 +94,31 @@ export class ExhibitionDesignGraphWithHuman {
           exhibitsCount: exhibitionOutline.exhibits.length,
           interactivePlanCount: exhibitionOutline.interactivePlan.length
         });
+
+        // 新增：单步模式暂停逻辑
+        if (state.requirements.stepByStepMode && !state.pausedAfterOutline) {
+          logger.info('[Workflow] 单步调试模式：在outline节点后暂停', { projectId: state.projectId });
+
+          // 广播暂停事件
+          broadcastStepByStepPause(state.projectId || '', {
+            paused: true,
+            currentStep: 'outline-completed-paused',
+            message: '大纲细化已完成，单步调试模式暂停，等待继续执行...'
+          });
+
+          broadcastLog('info', '🔵 大纲细化已完成，单步调试模式暂停，等待继续执行...');
+
+          // 返回特殊状态，触发暂停
+          return {
+            ...state,
+            exhibitionOutline,
+            waitingForHuman: true,
+            pausedAfterOutline: true,
+            currentStep: "outline-completed-paused",
+            messages: [...state.messages, "大纲细化已完成，单步调试模式暂停，等待继续执行..."],
+            revisionReason: undefined
+          };
+        }
 
         return {
           ...state,
@@ -707,11 +732,13 @@ export class ExhibitionDesignGraphWithHuman {
 
   async runExhibition(
     requirements: ExhibitionState["requirements"],
-    autoApprove: boolean = true
+    autoApprove: boolean = true,
+    projectId?: string
   ): Promise<{ graph: any; initialState: ExhibitionState }> {
     const graph = this.createGraph();
 
     const initialState: ExhibitionState = {
+      projectId,  // 添加项目ID
       requirements,
       currentStep: "开始项目",
       messages: ["展陈设计多智能体系统启动（人在回路模式）"],

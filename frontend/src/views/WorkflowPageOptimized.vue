@@ -38,7 +38,17 @@
         </div>
       </div>
       <div class="header-right">
-        <ElButton v-if="isProcessing" type="danger" @click="cancelWorkflow">
+        <!-- 继续执行按钮（单步暂停时显示） -->
+        <ElButton
+          v-if="isPausedAfterOutline"
+          type="success"
+          @click="handleContinueExecution"
+          size="large"
+        >
+          <ElIcon style="margin-right: 4px"><VideoPlay /></ElIcon>
+          继续执行
+        </ElButton>
+        <ElButton v-else-if="isProcessing" type="danger" @click="cancelWorkflow">
           <ElIcon style="margin-right: 4px"><Close /></ElIcon>
           取消
         </ElButton>
@@ -688,6 +698,13 @@ const progressPercentage = computed(() => {
   return Math.round(((stepIndex + 1) / workflowSteps.value.length) * 100)
 })
 
+// 检测是否处于单步暂停状态
+const isPausedAfterOutline = computed(() => {
+  return exhibitionStore.waitingForHuman &&
+         (exhibitionStore as any).pausedAfterOutline === true &&
+         (exhibitionStore as any).currentStep === 'outline-completed-paused'
+})
+
 // 获取分数样式
 const getScoreClass = (score: number) => {
   if (score >= 90) return 'score-excellent'
@@ -834,6 +851,32 @@ const handleReject = async () => {
     await submitDecision('reject')
   } catch {
     // 用户取消
+  }
+}
+
+// 继续执行（单步调试模式）
+const handleContinueExecution = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确认继续执行后续流程？',
+      '单步调试',
+      {
+        confirmButtonText: '继续执行',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    )
+
+    ElMessage.info('正在继续执行...')
+
+    const response = await exhibitionAPI.continueExecution(projectId.value)
+    if (response.success) {
+      ElMessage.success('已继续执行')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.message || '继续执行失败')
+    }
   }
 }
 
@@ -1042,15 +1085,39 @@ onMounted(() => {
     })
   }
 
+  // 监听单步暂停事件
+  const handleStepByStepPause = (event: any) => {
+    console.log('⏸️ 收到 step-by-step-pause 事件:', event.detail)
+    const { projectId: eventProjectId, paused, currentStep, message } = event.detail
+
+    // 只处理当前项目的事件
+    if (eventProjectId === projectId.value) {
+      addLog('warning', `⏸️ ${message}`)
+
+      // 更新状态
+      (exhibitionStore as any).waitingForHuman = paused
+      ;(exhibitionStore as any).pausedAfterOutline = paused
+      ;(exhibitionStore as any).currentStep = currentStep
+
+      ElNotification({
+        title: '单步调试暂停',
+        message,
+        type: 'info',
+        duration: 0
+      })
+    }
+  }
+
   // 注册所有事件监听器
   window.addEventListener('workflow-log', handleWorkflowLog)
   window.addEventListener('agentStatus', handleAgentStatus)
   window.addEventListener('waitingForHuman', handleWaitingForHuman)
   window.addEventListener('iterationUpdate', handleIterationUpdate)
   window.addEventListener('workflow-completed', handleWorkflowCompleted)
+  window.addEventListener('step-by-step-pause', handleStepByStepPause)
 
   console.log('✅ 所有事件监听器已注册')
-  console.log('监听的事件:', ['workflow-log', 'agentStatus', 'waitingForHuman', 'iterationUpdate', 'workflow-completed'])
+  console.log('监听的事件:', ['workflow-log', 'agentStatus', 'waitingForHuman', 'iterationUpdate', 'workflow-completed', 'step-by-step-pause'])
   console.log('======================================' )
 
   // 组件卸载时移除监听器
@@ -1061,6 +1128,7 @@ onMounted(() => {
     window.removeEventListener('waitingForHuman', handleWaitingForHuman)
     window.removeEventListener('iterationUpdate', handleIterationUpdate)
     window.removeEventListener('workflow-completed', handleWorkflowCompleted)
+    window.removeEventListener('step-by-step-pause', handleStepByStepPause)
     console.log('✅ 监听器已清理')
   })
 })

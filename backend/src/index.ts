@@ -305,6 +305,40 @@ export function broadcastIterationUpdate(iterationCount: number, revisionTarget:
   })
 }
 
+// 广播单步暂停状态
+export function broadcastStepByStepPause(projectId: string, data: {
+  paused: boolean;
+  currentStep: string;
+  message: string;
+}) {
+  const message = JSON.stringify({
+    type: 'step-by-step-pause',
+    projectId,
+    ...data,
+    timestamp: new Date().toISOString()
+  })
+
+  mainLogger.info('⏸️ 广播单步暂停状态', {
+    projectId,
+    paused: data.paused,
+    currentStep: data.currentStep
+  })
+
+  let successCount = 0
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      try {
+        client.send(message)
+        successCount++
+      } catch (error) {
+        mainLogger.warn('发送单步暂停状态失败', error as Error)
+      }
+    }
+  })
+
+  mainLogger.info('✅ 单步暂停状态广播完成', { projectId, successCount, totalClients: wss.clients.size })
+}
+
 // 添加错误处理中间件
 app.use(errorLogger)
 

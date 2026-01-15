@@ -825,7 +825,7 @@ const getParallelMemberClass = (status: string) => {
 
 onMounted(() => {
   // 初始化日志
-  addLog('info', '🚀 展陈设计多智能体系统启动')
+  addLog('info', '🚀 ExhibitionAI 系统启动')
   addLog('info', '📡 WebSocket 连接状态: ' + connectionStatus.value)
 
   // 检查是否有当前展览数据

@@ -22,9 +22,9 @@ export const projectQueries = {
     const stmt = db.prepare(`
       INSERT INTO projects (
         id, title, theme, target_audience, venue_area, venue_height, venue_layout,
-        budget_total, budget_currency, start_date, end_date, special_requirements,
+        budget_total, budget_currency, start_date, end_date, special_requirements, outline_draft, step_by_step,
         status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -40,12 +40,20 @@ export const projectQueries = {
       project.start_date,
       project.end_date,
       project.special_requirements,
+      project.outline_draft || null,
+      project.step_by_step || 0,
       project.status,
       now,
       now
     )
 
-    log('💾 数据库', `✅ 项目创建成功`, { id, title: project.title, status: project.status })
+    log('💾 数据库', `✅ 项目创建成功`, {
+      id,
+      title: project.title,
+      status: project.status,
+      hasOutlineDraft: !!project.outline_draft,
+      stepByStep: project.step_by_step === 1
+    })
 
     return { ...project, id, created_at: now, updated_at: now }
   },

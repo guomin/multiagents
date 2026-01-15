@@ -18,7 +18,9 @@ export const ExhibitionRequirementSchema = z.object({
     startDate: z.string().describe("开始日期"),
     endDate: z.string().describe("结束日期")
   }),
-  specialRequirements: z.array(z.string()).optional().describe("特殊要求")
+  specialRequirements: z.array(z.string()).optional().describe("特殊要求"),
+  outlineDraft: z.string().optional().describe("用户提供的大纲草稿或模板"),
+  stepByStepMode: z.boolean().optional().describe("单步执行模式（用于调试）")
 });
 
 export type ExhibitionRequirement = z.infer<typeof ExhibitionRequirementSchema>;
@@ -296,6 +298,7 @@ export type QualityEvaluation = z.infer<typeof QualityEvaluationSchema>;
 
 // 联合状态类型
 export const ExhibitionStateSchema = z.object({
+  projectId: z.string().optional().describe("项目ID"),
   requirements: ExhibitionRequirementSchema,
   conceptPlan: ConceptPlanSchema.optional(),
   exhibitionOutline: ExhibitionOutlineSchema.optional(), // 新增：展览大纲
@@ -319,6 +322,7 @@ export const ExhibitionStateSchema = z.object({
   humanDecision: z.enum(["approve", "revise", "reject"]).optional().describe("人工决策: approve=通过, revise=修订, reject=拒绝"),
   humanFeedback: z.string().optional().describe("人工反馈意见"),
   waitingForHuman: z.boolean().default(false).describe("是否等待人工审核"),
+  pausedAfterOutline: z.boolean().default(false).describe("是否在outline节点暂停后等待恢复"),
   autoApprove: z.boolean().default(true).describe("是否自动批准（无需人工审核）"),
   finalReport: z.string().optional().describe("最终报告内容")
 });

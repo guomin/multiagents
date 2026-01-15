@@ -86,7 +86,8 @@ export class CuratorAgent {
           targetAudience: requirements.targetAudience,
           area: requirements.venueSpace.area,
           height: requirements.venueSpace.height,
-          specialRequirements: requirements.specialRequirements?.join(", ")
+          specialRequirements: requirements.specialRequirements?.join(", "),
+          outlineDraft: requirements.outlineDraft || ''
         }
       );
 

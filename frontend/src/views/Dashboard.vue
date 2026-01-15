@@ -4,14 +4,52 @@
     <nav class="nav-glass slide-in-up">
       <div class="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
         <div class="flex items-center space-x-4">
-          <div class="hero-gradient p-3 rounded-2xl shadow-lg float-animation text-white text-3xl">
-              🖥️
-            </div>
+          <div class="hero-gradient p-3 rounded-2xl shadow-lg float-animation">
+            <!-- Logo SVG -->
+            <svg viewBox="0 0 48 48" class="w-12 h-12">
+              <defs>
+                <linearGradient id="logoGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#fff;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#dbeafe;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="accentGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#c4b5fd;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1" />
+                </linearGradient>
+              </defs>
+              <!-- 展览馆建筑轮廓 -->
+              <path d="M8 40 L8 20 L24 8 L40 20 L40 40"
+                    fill="none"
+                    stroke="url(#logoGradient2)"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"/>
+              <!-- 内部柱子 -->
+              <line x1="14" y1="24" x2="14" y2="36" stroke="url(#logoGradient2)" stroke-width="2" stroke-linecap="round"/>
+              <line x1="24" y1="24" x2="24" y2="36" stroke="url(#logoGradient2)" stroke-width="2" stroke-linecap="round"/>
+              <line x1="34" y1="24" x2="34" y2="36" stroke="url(#logoGradient2)" stroke-width="2" stroke-linecap="round"/>
+              <!-- AI 元素 - 电路节点 -->
+              <circle cx="24" cy="16" r="3" fill="url(#accentGradient2)"/>
+              <circle cx="14" cy="24" r="2" fill="url(#accentGradient2)"/>
+              <circle cx="34" cy="24" r="2" fill="url(#accentGradient2)"/>
+              <!-- AI 连接线 -->
+              <path d="M14 24 L24 16 L34 24"
+                    fill="none"
+                    stroke="url(#accentGradient2)"
+                    stroke-width="1.5"
+                    stroke-linecap="round"/>
+              <!-- AI 核心 - 中央节点 -->
+              <circle cx="24" cy="30" r="4" fill="url(#accentGradient2)"/>
+              <circle cx="24" cy="30" r="2" fill="#fff"/>
+              <!-- 底部基座 -->
+              <rect x="6" y="40" width="36" height="3" rx="1" fill="url(#logoGradient2)"/>
+            </svg>
+          </div>
           <div>
-            <h1 class="text-4xl font-bold text-gradient mb-2">展陈设计多智能体系统</h1>
+            <h1 class="text-4xl font-bold text-gradient mb-2">ExhibitionAI</h1>
             <p class="text-gray-600 text-lg flex items-center">
               <span class="inline-block w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-              基于 LangGraph 和 DeepSeek 的智能协作平台
+              展陈设计多智能体系统
             </p>
           </div>
         </div>

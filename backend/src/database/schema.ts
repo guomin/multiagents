@@ -34,6 +34,8 @@ export function initializeDatabase() {
       start_date TEXT,
       end_date TEXT,
       special_requirements TEXT,
+      outline_draft TEXT,
+      step_by_step INTEGER DEFAULT 0,
       status TEXT DEFAULT 'pending',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -93,6 +95,36 @@ export function initializeDatabase() {
   `)
 
   console.log('✅ 数据库表初始化完成')
+
+  // 迁移：添加 outline_draft 列（如果不存在）
+  try {
+    const columns = db.prepare("PRAGMA table_info(projects)").all() as any[]
+    const hasOutlineDraft = columns.some(col => col.name === 'outline_draft')
+
+    if (!hasOutlineDraft) {
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN outline_draft TEXT
+      `)
+      console.log('✅ 数据库迁移完成：已添加 outline_draft 列')
+    }
+  } catch (error) {
+    console.warn('⚠️  数据库迁移警告:', error)
+  }
+
+  // 迁移：添加 step_by_step 列（如果不存在）
+  try {
+    const columns = db.prepare("PRAGMA table_info(projects)").all() as any[]
+    const hasStepByStep = columns.some(col => col.name === 'step_by_step')
+
+    if (!hasStepByStep) {
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN step_by_step INTEGER DEFAULT 0
+      `)
+      console.log('✅ 数据库迁移完成：已添加 step_by_step 列')
+    }
+  } catch (error) {
+    console.warn('⚠️  数据库迁移警告:', error)
+  }
 }
 
 // 项目数据类型
@@ -109,6 +141,8 @@ export interface ProjectDB {
   start_date: string
   end_date: string
   special_requirements: string
+  outline_draft?: string
+  step_by_step?: number
   status: 'pending' | 'running' | 'completed' | 'error'
   created_at: string
   updated_at: string

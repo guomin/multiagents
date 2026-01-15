@@ -6,6 +6,7 @@ import type { ExhibitionRequirement, ExhibitionState } from '../types/exhibition
 import { createLogger } from '../utils/logger'
 import { responseTimeMonitor } from '../utils/performance-monitor'
 import { projectQueries, workflowQueries, agentExecutionQueries, designResultQueries } from '../database/queries'
+import { getPDFWorkerManager } from '../workers/pdf-manager'
 
 const router = Router()
 const logger = createLogger('EXHIBITION-API')
@@ -52,12 +53,18 @@ router.get('/model-config', (req, res) => {
 
     responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
 
+    // 安全地记录配置信息，不暴露敏感数据
     logger.info('模型配置获取成功', {
       provider: config.provider,
-      modelName: config.modelName
+      modelName: config.modelName,
+      temperature: config.temperature,
+      hasApiKey: !!config.apiKey,
+      apiKeyPreview: config.apiKey ? `....${config.apiKey.slice(-4)}` : 'N/A'
     })
 
-    res.json(config)
+    // 返回配置时移除敏感信息
+    const { apiKey, ...safeConfig } = config
+    res.json(safeConfig)
   } catch (error) {
     responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
 
@@ -297,8 +304,8 @@ async function runExhibitionAsync(
     const graphWithHuman = getExhibitionGraphWithHuman()
     console.log('✅ [ASYNC] ExhibitionGraphWithHuman 实例已获取，开始运行...')
 
-    // 第一次运行：传递 autoApprove 参数，图会根据此参数决定是否中断
-    const { graph, initialState } = await graphWithHuman.runExhibition(requirements, autoApprove)
+    // 第一次运行：传递 autoApprove 和 projectId 参数，图会根据此参数决定是否中断
+    const { graph, initialState } = await graphWithHuman.runExhibition(requirements, autoApprove, projectId)
     const chain = graph.compile()
 
     console.log('🔄 [ASYNC] 开始执行工作流...')
@@ -748,7 +755,7 @@ async function generateReport(id: string, format: string, forceRegenerate: boole
   // 如果是 PDF 格式，将 Markdown 转换为 PDF
   if (format === 'pdf') {
     logger.info('开始生成 PDF')
-    const pdfBuffer = await generatePdfFromMarkdown(markdown)
+    const pdfBuffer = await generatePdfFromMarkdown(markdown, id)
     logger.info('PDF 生成成功', { size: pdfBuffer.length })
     return pdfBuffer
   }
@@ -1024,9 +1031,49 @@ ${budget.recommendations?.map((r: string) => `- ${r}`).join('\n') || '无'}
 }
 
 /**
- * 将 Markdown 转换为 PDF
+ * 将 Markdown 转换为 PDF（使用 Worker Thread）
+ * @param markdown Markdown 内容
+ * @param projectId 项目ID（用于跟踪）
  */
-async function generatePdfFromMarkdown(markdown: string): Promise<Buffer> {
+async function generatePdfFromMarkdown(markdown: string, projectId: string): Promise<Buffer> {
+  logger.info('📄 [PDF Worker] 准备使用 Worker 生成 PDF', {
+    projectId,
+    markdownLength: markdown.length
+  });
+
+  try {
+    // 使用 Worker 生成 PDF，避免阻塞主线程
+    const pdfManager = getPDFWorkerManager();
+    const result = await pdfManager.generatePDF({
+      markdown,
+      projectId
+    });
+
+    logger.info('✅ [PDF Worker] PDF 生成完成', {
+      projectId,
+      duration: result.duration,
+      size: result.buffer.length
+    });
+
+    return result.buffer;
+
+  } catch (error) {
+    logger.error('❌ [PDF Worker] PDF 生成失败，尝试降级到主线程', error as Error, {
+      projectId
+    });
+
+    // 降级方案：在主线程生成（Worker 失败时）
+    logger.warn('⚠️ [降级] 使用主线程生成 PDF（可能阻塞请求）');
+    return generatePdfFromMarkdownFallback(markdown);
+  }
+}
+
+/**
+ * PDF 生成降级方案（主线程，用于 Worker 失败时）
+ */
+async function generatePdfFromMarkdownFallback(markdown: string): Promise<Buffer> {
+  logger.warn('🔄 [降级方案] 在主线程生成 PDF');
+
   const { marked } = await import('marked')
   const puppeteer = await import('puppeteer')
 
@@ -1602,6 +1649,141 @@ router.post('/exhibition/decision/:projectId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to process decision',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
+// 继续执行（单步调试模式）
+router.post('/exhibition/continue/:projectId', async (req, res) => {
+  const startTime = Date.now()
+
+  try {
+    const { projectId } = req.params
+
+    logger.info('收到继续执行请求', {
+      requestId: req.id,
+      projectId
+    })
+
+    // 1. 从数据库获取项目
+    const project = projectQueries.getById(projectId)
+    if (!project) {
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+      logger.warn('项目不存在', { projectId })
+      return res.status(404).json({
+        success: false,
+        error: '项目不存在',
+        projectId
+      })
+    }
+
+    // 2. 从 activeWorkflows 获取工作流状态
+    const workflowData = activeWorkflows.get(projectId)
+    if (!workflowData) {
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+      logger.warn('工作流未找到', { projectId })
+      return res.status(400).json({
+        success: false,
+        error: '工作流未找到或不在暂停状态',
+        projectId,
+        hint: '请确认项目处于单步调试模式暂停状态'
+      })
+    }
+
+    // 3. 检查是否处于单步暂停状态
+    if (!workflowData.state.pausedAfterOutline) {
+      responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+      logger.warn('项目未处于单步暂停状态', {
+        projectId,
+        pausedAfterOutline: workflowData.state.pausedAfterOutline
+      })
+      return res.status(400).json({
+        success: false,
+        error: '项目未处于单步暂停状态',
+        projectId
+      })
+    }
+
+    // 4. 清除暂停标志，继续执行
+    const updatedState = {
+      ...workflowData.state,
+      pausedAfterOutline: false,
+      waitingForHuman: false,
+      currentStep: 'continuing-execution',
+      messages: [...workflowData.state.messages, '🟢 继续执行后续流程...']
+    }
+
+    logger.info('继续执行工作流', {
+      projectId,
+      currentStep: updatedState.currentStep
+    })
+
+    // 5. 异步执行后续流程
+    setImmediate(async () => {
+      try {
+        logger.info('[继续执行] 开始异步执行', { projectId })
+
+        const result = await workflowData.chain.invoke(updatedState)
+
+        logger.info('[继续执行] 执行完成', {
+          projectId,
+          finalStep: result.currentStep
+        })
+
+        // 如果不再等待人工决策，从 activeWorkflows 中移除
+        if (!result.waitingForHuman) {
+          activeWorkflows.delete(projectId)
+          logger.info('[继续执行] 工作流完成，从activeWorkflows中移除', { projectId })
+
+          // 保存最终结果到数据库
+          workflowQueries.complete(workflowData.dbWorkflow.id)
+          projectQueries.updateStatus(projectId, 'completed')
+
+          broadcastProgress(100, '项目完成')
+          broadcastLog('success', '🎉 展陈设计项目完成！')
+
+        } else {
+          // 如果再次进入等待状态（比如supervisor审核），更新保存的状态
+          activeWorkflows.set(projectId, {
+            ...workflowData,
+            state: result
+          })
+          logger.info('[继续执行] 工作流再次暂停', { projectId })
+        }
+
+      } catch (error) {
+        console.error('[继续执行] 工作流执行失败:', error)
+        logger.error('继续执行工作流失败', error as Error, { projectId })
+      }
+    })
+
+    res.json({
+      success: true,
+      message: '继续执行',
+      projectId,
+      currentStep: 'continuing-execution'
+    })
+
+    logger.info('继续执行请求已接受', {
+      projectId,
+      duration: Date.now() - startTime
+    })
+
+    responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
+
+  } catch (error) {
+    console.error('❌ [CONTINUE] 处理继续执行请求失败:', error)
+    logger.error('处理继续执行请求失败', error as Error, {
+      projectId: req.params.projectId
+    })
+
+    res.status(500).json({
+      success: false,
+      error: '继续执行失败',
       details: error instanceof Error ? error.message : 'Unknown error'
     })
   }

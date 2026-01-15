@@ -5,11 +5,11 @@ import { PromptTemplate } from './types';
  */
 export const OUTLINE_PROMPTS: Record<string, PromptTemplate> = {
   generateOutline: {
-    version: { major: 1, minor: 0, patch: 0 },
+    version: { major: 1, minor: 0, patch: 1 },
     description: "生成展览详细大纲（展区划分、展品分配、预算框架）",
     author: "Claude",
     createdAt: "2025-01-07",
-    updatedAt: "2025-01-07",
+    updatedAt: "2025-01-12",
     systemTemplate: `你是展陈设计领域的大纲细化专家，拥有15年展览项目管理与实施经验，精通从概念策划到落地执行的全流程转化。
 
 【核心任务】
@@ -28,6 +28,22 @@ export const OUTLINE_PROMPTS: Record<string, PromptTemplate> = {
 3. 可执行性：所有输出必须考虑实际可行性，避免空泛描述
 4. 预算约束：严格在总预算范围内进行分配，保留5-10%的应急预留
 5. 可验证性：输出结构化数据，便于后续智能体引用和验证
+
+{{#if outlineDraft}}
+【用户提供大纲草稿】
+用户提供了初步的大纲草稿，请遵循以下原则进行处理：
+1. **尊重用户意图**：保留用户草稿中的核心结构、展区划分、主要展品
+2. **补全细节**：为用户草稿中的每个部分补充详细的功能描述、展品清单、预算分配
+3. **规范化处理**：将用户草稿转换为标准的数据结构，确保符合展览大纲要求
+4. **专业优化**：在用户草稿基础上，运用专业知识进行优化，添加遗漏的要素
+5. **保留特色**：保留用户草稿中的独特创意和特色亮点
+6. **完善不足**：补充用户草稿中可能缺失的技术细节、预算估算、空间约束等
+
+用户草稿将作为主要参考，AI的作用是"完善和细化"而非"重新设计"。
+{{else}}
+【常规模式】
+从零开始，基于概念策划方案生成完整的展览大纲。
+{{/if}}
 
 【展区划分原则】
 1. 展区数量：3-6个（根据叙事结构和场地面积确定）
@@ -94,6 +110,7 @@ export const OUTLINE_PROMPTS: Record<string, PromptTemplate> = {
 - cost相关字段如果为区间值，取中间值作为估算值
 
 【输出格式约束】
+⚠️ **字数限制**：JSON输出内容的总长度请不要超过10000个中文字符（约15000 token），确保输出完整不被截断。
 必须严格按照以下 JSON 格式输出，不要输出任何其他文本或解释：
 \`\`\`json
 {
@@ -177,6 +194,21 @@ export const OUTLINE_PROMPTS: Record<string, PromptTemplate> = {
 - 重点展品：{{keyExhibits}}
 - 参观流线：{{visitorFlow}}
 
+{{#if outlineDraft}}
+【用户提供的大纲草稿】
+{{outlineDraft}}
+
+【基于草稿的要求】
+请在保留用户草稿核心思路的基础上：
+1. 将草稿中的展区信息规范化为标准数据结构
+2. 补充每个展区的详细功能描述（300字以上）
+3. 为每个展区分配具体的展品清单
+4. 添加详细的互动装置规划
+5. 提供完整的预算框架和空间约束
+
+请确保最终输出符合下方的数据结构要求。
+{{/if}}
+
 【大纲细化要求】
 
 1. 展区划分（zones）
@@ -259,6 +291,214 @@ export const OUTLINE_PROMPTS: Record<string, PromptTemplate> = {
 ✅ 所有展区的budgetAllocation之和不超过{{totalBudget}}
 ✅ 互动装置总成本在合理范围内（15-25%总预算）
 
+⚠️ **重要提醒**：请控制JSON输出的总长度在10000字以内。如果展区数量较多，请适当精简每个展区function字段的描述（可控制在150-200字），优先保证结构完整性和数据准确性。
+
 请严格按照指定的 JSON 格式输出展览详细大纲。`
+  },
+
+  // ========== 分段生成 Prompts ==========
+
+  /**
+   * 分段1: 生成展区划分
+   */
+  generateZones: {
+    version: { major: 1, minor: 0, patch: 0 },
+    description: "分段生成：展区划分（zones）",
+    author: "Claude",
+    createdAt: "2025-01-12",
+    updatedAt: "2025-01-12",
+    systemTemplate: `你是展陈设计领域的大纲细化专家。本次任务：仅生成展区划分（zones），确保输出完整不被截断。
+
+【展区划分原则】
+1. 展区数量：3-6个（根据叙事结构和场地面积确定）
+2. 展区面积：
+   - 序厅：5-10%总面积
+   - 主展区：40-60%总面积
+   - 互动区：15-30%总面积
+   - 特展区/尾厅：5-15%总面积
+3. 展区功能（function）：150-200字描述，包含设计理念、展示内容、参观体验、空间特色
+4. 面积合理：避免过小（<30㎡）或过大（>300㎡）的展区
+
+【输出格式】
+\`\`\`json
+{
+  "zones": [
+    {
+      "id": "zone-1",
+      "name": "序厅",
+      "area": 50,
+      "percentage": 10,
+      "function": "展区功能描述（150-200字）",
+      "exhibitIds": [],
+      "interactiveIds": [],
+      "budgetAllocation": 50000
+    }
+  ]
+}
+\`\`\``,
+    humanTemplate: `请基于以下信息生成展区划分：
+
+【展览信息】
+- 标题：{{title}}
+- 主题：{{theme}}
+- 总面积：{{totalArea}}平方米
+
+【概念策划】
+- 核心概念：{{concept}}
+- 叙事结构：{{narrative}}
+- 参观流线：{{visitorFlow}}
+
+{{#if outlineDraft}}
+【用户提供的大纲草稿】
+{{outlineDraft}}
+
+请参考用户草稿中的展区结构，在保留用户意图的基础上规范化输出。
+{{/if}}
+
+要求：
+✅ 所有展区面积之和等于{{totalArea}}
+✅ 所有展区percentage之和等于100
+✅ 展区数量3-6个
+✅ function字段150-200字
+
+请严格按照 JSON 格式输出。`
+  },
+
+  /**
+   * 分段2: 生成展品和互动装置
+   */
+  generateExhibitsAndInteractive: {
+    version: { major: 1, minor: 0, patch: 0 },
+    description: "分段生成：展品和互动装置（exhibits + interactivePlan）",
+    author: "Claude",
+    createdAt: "2025-01-12",
+    updatedAt: "2025-01-12",
+    systemTemplate: `你是展陈设计领域的大纲细化专家。本次任务：仅生成展品清单和互动装置规划。
+
+【展品分配原则】
+1. 每件展品必须明确所属展区（zoneId）
+2. 保护等级：一级（保险50000-100000）、二级（10000-30000）、普通（3000-8000）
+3. 展柜要求：根据展品尺寸和保护等级确定
+4. 尺寸：提供长宽高（米）
+
+【互动装置原则】
+1. 数量：2-5个
+2. 类型：AR/VR（40000-100000）、触摸屏（15000-30000）、投影（30000-60000）、沙盘（80000-150000）
+3. 必须关联展区（zoneId）
+4. 避免在序厅放置
+
+【输出格式】
+\`\`\`json
+{
+  "exhibits": [
+    {
+      "id": "ex-1",
+      "name": "展品名称",
+      "zoneId": "zone-1",
+      "type": "文物",
+      "protectionLevel": "二级",
+      "showcaseRequirement": "独立恒温展柜",
+      "dimensions": { "length": 1.2, "width": 0.8, "height": 1.5 },
+      "insurance": 15000,
+      "transportCost": 5000
+    }
+  ],
+  "interactivePlan": [
+    {
+      "id": "int-1",
+      "name": "AR导览",
+      "zoneId": "zone-2",
+      "type": "AR",
+      "estimatedCost": 45000,
+      "priority": "high",
+      "description": "功能说明"
+    }
+  ]
+}
+\`\`\``,
+    humanTemplate: `请基于以下信息生成展品清单和互动装置：
+
+【展览信息】
+- 标题：{{title}}
+- 主题：{{theme}}
+- 总预算：{{totalBudget}}元
+
+【重点展品】
+{{keyExhibits}}
+
+【展区列表】
+{{zones}}
+
+要求：
+✅ 每件展品和互动装置必须有明确的zoneId
+✅ 成本字段为纯数字（元）
+✅ 互动装置避免在序厅
+
+请严格按照 JSON 格式输出。`
+  },
+
+  /**
+   * 分段3: 生成预算和空间约束
+   */
+  generateBudgetAndSpace: {
+    version: { major: 1, minor: 0, patch: 0 },
+    description: "分段生成：预算和空间约束（budgetAllocation + spaceConstraints）",
+    author: "Claude",
+    createdAt: "2025-01-12",
+    updatedAt: "2025-01-12",
+    systemTemplate: `你是展陈设计领域的大纲细化专家。本次任务：仅生成预算框架和空间约束。
+
+【预算分配原则】
+- 总额严格遵循给定预算
+- 建议保留5-10%应急预留
+- subCategories：硬装、展柜、照明、互动装置、其他
+
+【空间约束原则】
+- 主通道≥2.5米，次通道≥1.8米
+- 主展区占比≥40%
+- 展区数量在min和max之间
+
+【输出格式】
+\`\`\`json
+{
+  "budgetAllocation": {
+    "total": 500000,
+    "breakdown": [
+      {
+        "category": "序厅",
+        "amount": 50000,
+        "subCategories": [
+          { "name": "硬装", "amount": 20000 },
+          { "name": "照明", "amount": 10000 }
+        ]
+      }
+    ]
+  },
+  "spaceConstraints": {
+    "totalArea": 500,
+    "minZoneCount": 3,
+    "maxZoneCount": 6,
+    "minAisleWidth": 1.8,
+    "mainZoneRatio": 0.4
+  }
+}
+\`\`\``,
+    humanTemplate: `请基于以下信息生成预算框架和空间约束：
+
+【总预算】
+{{totalBudget}}元
+
+【总面积】
+{{totalArea}}平方米
+
+【展区列表】
+{{zones}}
+
+要求：
+✅ budgetAllocation.total = {{totalBudget}}
+✅ spaceConstraints.totalArea = {{totalArea}}
+✅ 所有金额为纯数字（元）
+
+请严格按照 JSON 格式输出。`
   }
 };

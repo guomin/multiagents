@@ -16,7 +16,9 @@ export interface ExhibitionRequirement {
     endDate: string;
   };
   specialRequirements: string[];
+  outlineDraft?: string; // 大纲草稿（可选），最大20000字符
   maxIterations?: number; // 新增：最大迭代次数
+  stepByStepMode?: boolean; // 单步执行模式（用于调试）
 }
 
 export interface QualityEvaluation {
@@ -78,6 +80,7 @@ export interface ExhibitionState {
   humanDecision?: 'approve' | 'revise' | 'reject'; // 人工决策
   humanFeedback?: string; // 人工反馈意见
   waitingForHuman?: boolean; // 是否等待人工审核
+  pausedAfterOutline?: boolean; // 是否在outline节点暂停后等待恢复
 }
 
 export interface ConceptPlan {

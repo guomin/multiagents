@@ -77,6 +77,17 @@ export const exhibitionAPI = {
     }
   },
 
+  // 继续执行（单步调试模式）
+  async continueExecution(projectId: string): Promise<any> {
+    try {
+      const response = await api.post(`/exhibition/continue/${projectId}`)
+      return response.data
+    } catch (error) {
+      console.error('Failed to continue execution:', error)
+      throw error
+    }
+  },
+
   // 获取工作流状态
   async getWorkflowStatus(id: string): Promise<any> {
     try {
