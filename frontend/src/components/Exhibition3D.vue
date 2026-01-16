@@ -15,20 +15,91 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 const containerRef = ref<HTMLElement>()
 const canvasRef = ref<HTMLCanvasElement>()
-let scene: any = null
-let camera: any = null
-let renderer: any = null
+
+// 类型化变量
+let scene: import('three').Scene | null = null
+let camera: import('three').PerspectiveCamera | null = null
+let renderer: import('three').WebGLRenderer | null = null
 let animationId: number = 0
+
+// 性能优化：暂停标志
+const isPaused = ref(false)
+const isPageHidden = ref(false)
 
 onMounted(() => {
   init3DScene()
+  setupIntersectionObserver()
+  setupVisibilityListener()
 })
 
 onUnmounted(() => {
+  cleanup()
+})
+
+const cleanup = () => {
   if (animationId) {
     cancelAnimationFrame(animationId)
+    animationId = 0
   }
-})
+
+  // 清理 IntersectionObserver
+  if (containerRef.value && (containerRef.value as any)._observer) {
+    ;(containerRef.value as any)._observer.disconnect()
+  }
+
+  // 清理 visibilitychange 监听器
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+
+  // 清理 renderer
+  if (renderer) {
+    renderer.dispose()
+    renderer = null
+  }
+
+  // 清理几何体和材质
+  if (scene) {
+    scene.traverse((object: any) => {
+      if (object.geometry) object.geometry.dispose()
+      if (object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach((m: any) => m.dispose())
+        } else {
+          object.material.dispose()
+        }
+      }
+    })
+    scene = null
+  }
+  camera = null
+}
+
+// 视口检测：不在视口时暂停渲染
+const setupIntersectionObserver = () => {
+  if (!containerRef.value) return
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach(entry => {
+        isPaused.value = !entry.isIntersecting
+      })
+    },
+    { threshold: 0.1 }
+  )
+
+  observer.observe(containerRef.value)
+
+  // 保存 observer 引用以便清理
+  ;(containerRef.value as any)._observer = observer
+}
+
+// 页面可见性检测
+const setupVisibilityListener = () => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+}
+
+const handleVisibilityChange = () => {
+  isPageHidden.value = document.hidden
+}
 
 const init3DScene = () => {
   // 动态导入 Three.js（支持 tree-shaking）
@@ -67,8 +138,9 @@ const init3DScene = () => {
     const mainLight = new THREE.DirectionalLight(0xfff5e6, 0.6)
     mainLight.position.set(0, 18, 0)
     mainLight.castShadow = true
-    mainLight.shadow.mapSize.width = 2048
-    mainLight.shadow.mapSize.height = 2048
+    // 性能优化：降低阴影贴图分辨率 2048 -> 1024
+    mainLight.shadow.mapSize.width = 1024
+    mainLight.shadow.mapSize.height = 1024
     mainLight.shadow.camera.near = 0.5
     mainLight.shadow.camera.far = 50
     mainLight.shadow.camera.left = -20
@@ -109,6 +181,11 @@ const init3DScene = () => {
 
     const animate = () => {
       animationId = requestAnimationFrame(animate)
+
+      // 性能优化：暂停检测
+      if (isPaused.value || isPageHidden.value) {
+        return
+      }
 
       const currentTime = Date.now() * 0.001
 
@@ -649,8 +726,9 @@ const createExhibitionBuilding = (THREE: any) => {
   centerSpotLight.position.set(0, 12, 0)
   centerSpotLight.target.position.set(0, 3.5, 0)
   centerSpotLight.castShadow = true
-  centerSpotLight.shadow.mapSize.width = 2048
-  centerSpotLight.shadow.mapSize.height = 2048
+  // 性能优化：降低阴影贴图分辨率 2048 -> 1024
+  centerSpotLight.shadow.mapSize.width = 1024
+  centerSpotLight.shadow.mapSize.height = 1024
   scene.add(centerSpotLight)
   scene.add(centerSpotLight.target)
 
@@ -723,7 +801,8 @@ const createExhibitionBuilding = (THREE: any) => {
 }
 
 const createParticles = (THREE: any) => {
-  const particleCount = 500
+  // 性能优化：减少粒子数量 500 -> 200
+  const particleCount = 200
   const geometry = new THREE.BufferGeometry()
   const positions = new Float32Array(particleCount * 3)
   const colors = new Float32Array(particleCount * 3)
