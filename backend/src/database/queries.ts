@@ -22,9 +22,9 @@ export const projectQueries = {
     const stmt = db.prepare(`
       INSERT INTO projects (
         id, title, theme, target_audience, venue_area, venue_height, venue_layout,
-        budget_total, budget_currency, start_date, end_date, special_requirements,
-        status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        budget_total, budget_currency, start_date, end_date, special_requirements, outline_draft, step_by_step,
+        status, user_id, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -40,17 +40,28 @@ export const projectQueries = {
       project.start_date,
       project.end_date,
       project.special_requirements,
+      project.outline_draft || null,
+      project.step_by_step || 0,
       project.status,
+      project.user_id || null,
+      project.created_by || null,
       now,
       now
     )
 
-    log('💾 数据库', `✅ 项目创建成功`, { id, title: project.title, status: project.status })
+    log('💾 数据库', `✅ 项目创建成功`, {
+      id,
+      title: project.title,
+      status: project.status,
+      userId: project.user_id,
+      hasOutlineDraft: !!project.outline_draft,
+      stepByStep: project.step_by_step === 1
+    })
 
     return { ...project, id, created_at: now, updated_at: now }
   },
 
-  // 获取所有项目
+  // 获取所有项目（保持向后兼容）
   getAll(limit = 50, offset = 0): ProjectDB[] {
     const stmt = db.prepare(`
       SELECT * FROM projects
@@ -59,6 +70,19 @@ export const projectQueries = {
     `)
     const projects = stmt.all(limit, offset) as ProjectDB[]
     log('💾 数据库', `📋 获取项目列表`, { count: projects.length, limit, offset })
+    return projects
+  },
+
+  // 获取用户自己的项目
+  getAllForUser(userId: string, limit = 50, offset = 0): ProjectDB[] {
+    const stmt = db.prepare(`
+      SELECT * FROM projects
+      WHERE user_id = ? OR user_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `)
+    const projects = stmt.all(userId, limit, offset) as ProjectDB[]
+    log('💾 数据库', `📋 获取用户项目列表`, { userId, count: projects.length, limit, offset })
     return projects
   },
 
@@ -72,10 +96,19 @@ export const projectQueries = {
     return stmt.all(status) as ProjectDB[]
   },
 
-  // 根据 ID 获取项目
+  // 根据 ID 获取项目（保持向后兼容）
   getById(id: string): ProjectDB | undefined {
     const stmt = db.prepare('SELECT * FROM projects WHERE id = ?')
     return stmt.get(id) as ProjectDB | undefined
+  },
+
+  // 根据 ID 获取用户项目（验证所有权）
+  getByIdForUser(id: string, userId: string): ProjectDB | undefined {
+    const stmt = db.prepare(`
+      SELECT * FROM projects
+      WHERE id = ? AND (user_id = ? OR user_id IS NULL)
+    `)
+    return stmt.get(id, userId) as ProjectDB | undefined
   },
 
   // 更新项目状态
@@ -88,10 +121,17 @@ export const projectQueries = {
     stmt.run(status, id)
   },
 
-  // 删除项目
+  // 删除项目（保持向后兼容）
   delete(id: string): void {
     const stmt = db.prepare('DELETE FROM projects WHERE id = ?')
     stmt.run(id)
+  },
+
+  // 删除用户项目（验证所有权）
+  deleteForUser(id: string, userId: string): boolean {
+    const stmt = db.prepare('DELETE FROM projects WHERE id = ? AND user_id = ?')
+    const result = stmt.run(id, userId)
+    return result.changes > 0
   },
 
   // 获取项目统计
@@ -168,6 +208,17 @@ export const workflowQueries = {
       WHERE id = ?
     `)
     stmt.run(currentStep, progress, id)
+  },
+
+  // 更新工作流状态
+  updateStatus(id: string, status: string): void {
+    const stmt = db.prepare(`
+      UPDATE workflows
+      SET status = ?
+      WHERE id = ?
+    `)
+    stmt.run(status, id)
+    log('💾 数据库', `🔄 工作流状态更新`, { id, status })
   },
 
   // 完成工作流

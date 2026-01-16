@@ -2,21 +2,43 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { ExhibitionState, QualityEvaluation } from "../types/exhibition";
 import { ModelConfigFactory, ModelConfig } from "../config/model";
+import { promptManager } from "../prompts";
+import { createLogger } from "../utils/logger";
 
 export class SupervisorAgent {
   private llm: ChatOpenAI;
   private modelConfig: ModelConfig;
+  private logger = createLogger('SUPERVISOR-AGENT');
+  // 降级统计
+  private fallbackCount = 0;
+  private readonly FALLBACK_LOG_THRESHOLD = 5;
+  private readonly FALLBACK_STATS_INTERVAL = 100;
 
   constructor(modelName?: string, temperature: number = 0.5) {
-    this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
+    this.logger.info('🛡️ 初始化监督智能体', { modelName, temperature });
 
-    this.llm = new ChatOpenAI({
-      modelName: this.modelConfig.modelName,
-      temperature: this.modelConfig.temperature,
-      openAIApiKey: this.modelConfig.apiKey,
-      ...(this.modelConfig.baseURL && { configuration: { baseURL: this.modelConfig.baseURL } }),
-      ...(this.modelConfig.organization && { openAIOrganization: this.modelConfig.organization })
-    });
+    try {
+      this.modelConfig = ModelConfigFactory.createModelConfig(undefined, modelName, temperature);
+
+      this.logger.info('✅ 模型配置创建成功', {
+        provider: this.modelConfig.provider,
+        modelName: this.modelConfig.modelName,
+        temperature: this.modelConfig.temperature
+      });
+
+      this.llm = new ChatOpenAI({
+        modelName: this.modelConfig.modelName,
+        temperature: this.modelConfig.temperature,
+        openAIApiKey: this.modelConfig.apiKey,
+        ...(this.modelConfig.baseURL && { configuration: { baseURL: this.modelConfig.baseURL } }),
+        ...(this.modelConfig.organization && { openAIOrganization: this.modelConfig.organization })
+      });
+
+      this.logger.info('✅ LLM客户端初始化完成');
+    } catch (error) {
+      this.logger.error('❌ 初始化失败', error as Error, { modelName, temperature });
+      throw error;
+    }
   }
 
   async analyzeProgress(state: ExhibitionState): Promise<{
@@ -24,38 +46,27 @@ export class SupervisorAgent {
     recommendations: string[];
     issues: string[];
   }> {
-    const systemPrompt = `你是展陈设计多智能体系统的协调主管。你需要分析当前项目的进展状态，确定下一步行动，并提供专业建议。
-
-你的职责包括：
-1. 分析各智能体的工作进展
-2. 识别潜在的问题和冲突
-3. 协调各专业领域的工作
-4. 确保项目质量和进度
-
-请输出：
-- nextAction: 下一步应该执行的操作
-- recommendations: 改进建议
-- issues: 发现的问题或风险`;
-
-    const humanPrompt = `请分析当前展陈设计项目的状态：
-
-当前步骤：${state.currentStep}
-已有成果：
-${state.conceptPlan ? "✅ 概念策划已完成" : "❌ 概念策划待完成"}
-${state.spatialLayout ? "✅ 空间设计已完成" : "❌ 空间设计待完成"}
-${state.visualDesign ? "✅ 视觉设计已完成" : "❌ 视觉设计待完成"}
-${state.interactiveSolution ? "✅ 互动技术方案已完成" : "❌ 互动技术方案待完成"}
-${state.budgetEstimate ? "✅ 预算估算已完成" : "❌ 预算估算待完成"}
-
-展览信息：${state.requirements.title}
-主题：${state.requirements.theme}
-预算：${state.requirements.budget.total} ${state.requirements.budget.currency}
-
-请提供分析和建议。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'supervisor',
+      'analyzeProgress',
+      {
+        currentStep: state.currentStep,
+        hasConceptPlan: !!state.conceptPlan,
+        hasSpatialLayout: !!state.spatialLayout,
+        hasVisualDesign: !!state.visualDesign,
+        hasInteractiveSolution: !!state.interactiveSolution,
+        hasBudgetEstimate: !!state.budgetEstimate,
+        title: state.requirements.title,
+        theme: state.requirements.theme,
+        budget: state.requirements.budget.total,
+        currency: state.requirements.budget.currency
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);
@@ -94,15 +105,163 @@ ${state.budgetEstimate ? "✅ 预算估算已完成" : "❌ 预算估算待完�
   }
 
   async generateFinalReport(state: ExhibitionState): Promise<string> {
-    const reportContent = `
+    this.logger.info('🎯 开始生成最终报告');
+
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'supervisor',
+      'generateFinalReport',
+      {
+        // 项目基本信息
+        title: state.requirements.title,
+        theme: state.requirements.theme,
+        targetAudience: state.requirements.targetAudience || '未指定',
+        startDate: state.requirements.duration.startDate,
+        endDate: state.requirements.duration.endDate,
+        area: state.requirements.venueSpace.area,
+        height: state.requirements.venueSpace.height,
+        layout: state.requirements.venueSpace.layout,
+        budget: state.requirements.budget.total,
+        currency: state.requirements.budget.currency,
+
+        // 概念策划字段
+        conceptPlan: !!state.conceptPlan,
+        concept: state.conceptPlan?.concept || '尚未提供',
+        narrative: state.conceptPlan?.narrative || '尚未提供',
+        keyExhibits: state.conceptPlan?.keyExhibits?.join(", ") || '尚未提供',
+        visitorFlow: state.conceptPlan?.visitorFlow || '尚未提供',
+
+        // 大纲细化字段（新增）
+        exhibitionOutline: !!state.exhibitionOutline,
+        outlineZones: state.exhibitionOutline?.zones?.map((z: any) =>
+          `- **${z.name}** (占比${z.percentage}%)
+  - 面积: ${z.area}㎡
+  - 功能: ${z.function}
+  - 预算分配: ¥${z.budgetAllocation?.toLocaleString() || '未提供'}
+  - 展品数量: ${z.exhibitIds?.length || 0}件
+  - 互动装置: ${z.interactiveIds?.length || 0}个`
+        ).join('\n\n') || '尚未提供',
+        outlineExhibitsCount: state.exhibitionOutline?.exhibits?.length || 0,
+        outlineExhibits: state.exhibitionOutline?.exhibits?.slice(0, 15).map((e: any, idx: number) =>
+          `- **${e.name}**
+  - 类型: ${e.type}
+  - 保护等级: ${e.protectionLevel}
+  - 展柜要求: ${e.showcaseRequirement || '未提供'}
+  - 保险费用: ¥${e.insurance?.toLocaleString() || '未提供'}
+  - 运输费用: ¥${e.transportCost?.toLocaleString() || '未提供'}${e.dimensions ? `\n  - 尺寸: ${e.dimensions.length}×${e.dimensions.width}×${e.dimensions.height}米` : ''}`
+        ).join('\n\n') + (state.exhibitionOutline?.exhibits && state.exhibitionOutline.exhibits.length > 15 ? `\n\n*注：共 ${state.exhibitionOutline.exhibits.length} 件展品，以上仅展示前 15 件*` : '') || '尚未提供',
+        outlineInteractiveCount: state.exhibitionOutline?.interactivePlan?.length || 0,
+        outlineInteractive: state.exhibitionOutline?.interactivePlan?.map((ip: any, idx: number) =>
+          `- **${ip.name}** (${ip.type})
+  - 优先级: ${ip.priority === 'high' ? '高' : ip.priority === 'medium' ? '中' : '低'}
+  - 预估成本: ¥${ip.estimatedCost?.toLocaleString() || '未提供'}
+  - 放置展区: ${ip.zoneId || '未指定'}
+  - 功能描述: ${ip.description || '未提供'}`
+        ).join('\n\n') || '尚未提供',
+        outlineBudgetTotal: state.exhibitionOutline?.budgetAllocation?.total?.toLocaleString() || '未提供',
+        outlineBudgetBreakdown: state.exhibitionOutline?.budgetAllocation?.breakdown?.map((b: any) =>
+          `- **${b.category}**: ¥${b.amount?.toLocaleString() || '未提供'}${b.subCategories ? `\n  ${b.subCategories.map((s: any) => `    - ${s.name}: ¥${s.amount?.toLocaleString() || '未提供'}`).join('\n  ')}` : ''}`
+        ).join('\n') || '尚未提供',
+        outlineSpaceTotal: state.exhibitionOutline?.spaceConstraints?.totalArea || '未提供',
+        outlineSpaceZones: `${state.exhibitionOutline?.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline?.spaceConstraints?.maxZoneCount || '-'} 个`,
+        outlineSpaceAisleWidth: `≥${state.exhibitionOutline?.spaceConstraints?.minAisleWidth || '-'} 米`,
+        outlineSpaceMainZoneRatio: state.exhibitionOutline?.spaceConstraints?.mainZoneRatio ? `≥${(state.exhibitionOutline.spaceConstraints.mainZoneRatio * 100).toFixed(0)}%` : '-',
+
+        // 空间设计字段
+        spatialLayout: !!state.spatialLayout,
+        spatialLayoutDesc: state.spatialLayout?.layout || '尚未提供',
+        visitorRoute: state.spatialLayout?.visitorRoute?.join(" → ") || '尚未提供',
+        zones: state.spatialLayout?.zones?.map(z =>
+          `${z.name}: ${z.area}㎡ - ${z.function}`
+        ).join("\n") || '尚未提供',
+
+        // 视觉设计字段
+        visualDesign: !!state.visualDesign,
+        colorScheme: state.visualDesign?.colorScheme?.join(", ") || '尚未提供',
+        typography: state.visualDesign?.typography || '尚未提供',
+        brandElements: state.visualDesign?.brandElements?.join(", ") || '尚未提供',
+        visualStyle: state.visualDesign?.visualStyle || '尚未提供',
+
+        // 互动技术字段
+        interactiveSolution: !!state.interactiveSolution,
+        technologies: state.interactiveSolution?.technologies?.join(", ") || '尚未提供',
+        interactives: state.interactiveSolution?.interactives?.map(i =>
+          `- **${i.name}** (${i.type}): ${i.description}${i.cost ? ` - 成本: ${i.cost}` : ''}`
+        ).join("\n") || '尚未提供',
+
+        // 预算估算字段
+        budgetEstimate: !!state.budgetEstimate,
+        totalCost: state.budgetEstimate?.totalCost?.toString() || '0',
+        breakdown: state.budgetEstimate?.breakdown?.map(b =>
+          `- **${b.category}**: ${b.description} - ${b.amount} ${state.requirements.budget.currency}`
+        ).join("\n") || '尚未提供',
+        recommendations: state.budgetEstimate?.recommendations?.join("\n") || '无',
+
+        // 项目完成状态
+        completedSteps: [
+          state.conceptPlan,
+          state.exhibitionOutline,
+          state.spatialLayout,
+          state.visualDesign,
+          state.interactiveSolution,
+          state.budgetEstimate
+        ].filter(Boolean).length,
+        totalSteps: 6,
+        iterationCount: state.iterationCount
+      }
+    );
+
+    const messages = [
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
+    ];
+
+    try {
+      const response = await this.llm.invoke(messages);
+      const reportContent = response.content.toString();
+
+      this.logger.info('✅ 最终报告生成成功', {
+        reportLength: reportContent.length,
+        preview: reportContent.substring(0, 100)
+      });
+
+      return reportContent;
+    } catch (error) {
+      this.logger.error('❌ 生成最终报告失败', error as Error);
+
+      // 如果 AI 生成失败，回退到简单的字符串拼接
+      this.logger.warn('回退到简单报告生成');
+      return this.generateSimpleReport(state);
+    }
+  }
+
+  /**
+   * 生成简单的报告（备用方案）
+   */
+  private generateSimpleReport(state: ExhibitionState): string {
+    const completedSteps = [
+      state.conceptPlan,
+      state.exhibitionOutline,
+      state.spatialLayout,
+      state.visualDesign,
+      state.interactiveSolution,
+      state.budgetEstimate
+    ].filter(Boolean).length;
+
+    const completionRate = Math.round((completedSteps / 6) * 100);
+
+    return `
 # 展陈设计项目报告
 
 ## 项目概述
 - **展览名称**: ${state.requirements.title}
 - **展览主题**: ${state.requirements.theme}
-- **目标受众**: ${state.requirements.targetAudience}
+- **目标受众**: ${state.requirements.targetAudience || '未指定'}
 - **展期**: ${state.requirements.duration.startDate} 至 ${state.requirements.duration.endDate}
 - **场地面积**: ${state.requirements.venueSpace.area}平方米
+- **场地高度**: ${state.requirements.venueSpace.height}米
+- **场地布局**: ${state.requirements.venueSpace.layout}
+- **预算**: ${state.requirements.budget.total.toLocaleString()} ${state.requirements.budget.currency}
 
 ## 设计方案
 
@@ -111,146 +270,156 @@ ${state.conceptPlan ? `
 - **核心概念**: ${state.conceptPlan.concept}
 - **叙事结构**: ${state.conceptPlan.narrative}
 - **重点展品**: ${state.conceptPlan.keyExhibits.join(", ")}
-` : "概念策划尚未完成"}
+- **参观流程**: ${state.conceptPlan.visitorFlow || '未提供'}
+` : "⚠️ 概念策划尚未完成"}
 
-### 2. 空间设计
+### 2. 大纲细化
+${state.exhibitionOutline ? `
+**展区划分** (${state.exhibitionOutline.zones?.length || 0}个展区):
+${state.exhibitionOutline.zones?.map((z: any, idx: number) =>
+  `- **${z.name}** (占比${z.percentage}%)
+  - 面积: ${z.area}㎡
+  - 功能: ${z.function}
+  - 预算分配: ¥${z.budgetAllocation?.toLocaleString() || '未提供'}
+  - 展品数量: ${z.exhibitIds?.length || 0}件
+  - 互动装置: ${z.interactiveIds?.length || 0}个`
+).join('\n\n') || '未提供'}
+
+**展品清单** (${state.exhibitionOutline.exhibits?.length || 0}件展品):
+${state.exhibitionOutline.exhibits?.slice(0, 15).map((e: any, idx: number) =>
+  `- **${e.name}**
+  - 类型: ${e.type}
+  - 保护等级: ${e.protectionLevel}
+  - 展柜要求: ${e.showcaseRequirement || '未提供'}
+  - 保险费用: ¥${e.insurance?.toLocaleString() || '未提供'}
+  - 运输费用: ¥${e.transportCost?.toLocaleString() || '未提供'}${e.dimensions ? `\n  - 尺寸: ${e.dimensions.length}×${e.dimensions.width}×${e.dimensions.height}米` : ''}`
+).join('\n\n') || '未提供'}
+${state.exhibitionOutline.exhibits?.length > 15 ? `\n*注：共 ${state.exhibitionOutline.exhibits.length} 件展品，以上仅展示前 15 件*` : ''}
+
+**互动装置规划** (${state.exhibitionOutline.interactivePlan?.length || 0}个装置):
+${state.exhibitionOutline.interactivePlan?.map((ip: any, idx: number) =>
+  `- **${ip.name}** (${ip.type})
+  - 优先级: ${ip.priority === 'high' ? '高' : ip.priority === 'medium' ? '中' : '低'}
+  - 预估成本: ¥${ip.estimatedCost?.toLocaleString() || '未提供'}
+  - 放置展区: ${ip.zoneId || '未指定'}
+  - 功能描述: ${ip.description || '未提供'}`
+).join('\n\n') || '未提供'}
+
+**预算框架**:
+- 总预算: ¥${state.exhibitionOutline.budgetAllocation?.total?.toLocaleString() || '未提供'}
+${state.exhibitionOutline.budgetAllocation?.breakdown?.map((b: any) =>
+  `- **${b.category}**: ¥${b.amount?.toLocaleString() || '未提供'}${b.subCategories ? `\n  ${b.subCategories.map((s: any) => `    - ${s.name}: ¥${s.amount?.toLocaleString() || '未提供'}`).join('\n  ')}` : ''}`
+).join('\n') || '未提供'}
+
+**空间约束**:
+- 总面积: ${state.exhibitionOutline.spaceConstraints?.totalArea || '未提供'}㎡
+- 展区数量: ${state.exhibitionOutline.spaceConstraints?.minZoneCount || '-'} - ${state.exhibitionOutline.spaceConstraints?.maxZoneCount || '-'} 个
+- 通道宽度: ≥${state.exhibitionOutline.spaceConstraints?.minAisleWidth || '-'} 米
+- 主展区占比: ≥${state.exhibitionOutline.spaceConstraints?.mainZoneRatio ? (state.exhibitionOutline.spaceConstraints.mainZoneRatio * 100).toFixed(0) : '-'}%
+` : "⚠️ 大纲细化尚未完成"}
+
+### 3. 空间设计
 ${state.spatialLayout ? `
 - **布局方案**: ${state.spatialLayout.layout}
 - **参观路线**: ${state.spatialLayout.visitorRoute.join(" → ")}
-- **功能区域**: ${state.spatialLayout.zones.map(z => `${z.name}(${z.area}㎡)`).join(", ")}
-` : "空间设计尚未完成"}
+- **功能区域**:
+${state.spatialLayout.zones.map(z => `  - ${z.name}: ${z.area}㎡ (${z.function})`).join("\n")}
+` : "⚠️ 空间设计尚未完成"}
 
-### 3. 视觉设计
+### 4. 视觉设计
 ${state.visualDesign ? `
 - **色彩方案**: ${state.visualDesign.colorScheme.join(", ")}
 - **字体设计**: ${state.visualDesign.typography}
 - **品牌元素**: ${state.visualDesign.brandElements.join(", ")}
-` : "视觉设计尚未完成"}
+- **视觉风格**: ${state.visualDesign.visualStyle || '未指定'}
+` : "⚠️ 视觉设计尚未完成"}
 
-### 4. 互动技术
+### 5. 互动技术
 ${state.interactiveSolution ? `
 - **使用技术**: ${state.interactiveSolution.technologies.join(", ")}
-- **互动装置**: ${state.interactiveSolution.interactives.map(i => i.name).join(", ")}
-` : "互动技术方案尚未完成"}
+- **互动装置**:
+${state.interactiveSolution.interactives.map(i =>
+  `  - **${i.name}** (${i.type}): ${i.description}${i.cost ? ` - 成本: ¥${i.cost.toLocaleString()}` : ''}`
+).join("\n")}
+` : "⚠️ 互动技术方案尚未完成"}
 
-### 5. 预算估算
+### 6. 预算估算
 ${state.budgetEstimate ? `
-- **总成本**: ${state.budgetEstimate.totalCost} ${state.requirements.budget.currency}
-- **预算明细**: ${state.budgetEstimate.breakdown.map(b => `${b.category}: ${b.amount}`).join(", ")}
-` : "预算估算尚未完成"}
+- **总成本**: ${state.budgetEstimate.totalCost.toLocaleString()} ${state.requirements.budget.currency}
+- **预算明细**:
+${state.budgetEstimate.breakdown.map(b =>
+  `  - **${b.category}**: ${b.description} - ${b.amount.toLocaleString()} ${state.requirements.budget.currency}`
+).join("\n")}
+- **优化建议**:
+${state.budgetEstimate.recommendations.map(r => `  - ${r}`).join("\n")}
+` : "⚠️ 预算估算尚未完成"}
 
 ## 项目状态
-${this.getProjectCompletionStatus(state)}
-    `;
+- **完成度**: ${completionRate}% (${completedSteps}/6个阶段已完成)
+- **迭代次数**: ${state.iterationCount + 1}
 
-    return reportContent;
-  }
+---
 
-  private getProjectCompletionStatus(state: ExhibitionState): string {
-    const completedSteps = [
-      state.conceptPlan,
-      state.spatialLayout,
-      state.visualDesign,
-      state.interactiveSolution,
-      state.budgetEstimate
-    ].filter(Boolean).length;
-
-    const totalSteps = 5;
-    const completionRate = Math.round((completedSteps / totalSteps) * 100);
-
-    return `项目完成度: ${completionRate}% (${completedSteps}/${totalSteps}个阶段已完成)`;
+*本报告由展陈设计多智能体系统自动生成*
+    `.trim();
   }
 
   /**
    * 评估当前设计方案的质量
    */
   async evaluateQuality(state: ExhibitionState): Promise<QualityEvaluation> {
-    const systemPrompt = `你是展陈设计系统的质量评估专家。你需要全面评估当前设计方案的质量，并提供客观的分数和建设性的反馈。
-
-评估维度（每个维度0-1分）：
-1. 概念策划（conceptScore）：创意性、主题契合度、叙事逻辑
-2. 空间设计（spatialScore）：布局合理性、动线流畅度、功能完整性
-3. 视觉设计（visualScore）：美学价值、品牌一致性、可实施性
-4. 互动技术（interactiveScore）：技术可行性、用户体验、创新性
-5. 预算合理性（budgetScore）：成本控制、性价比、风险控制
-
-输出格式（JSON）：
-{
-  "overallScore": 0.85,
-  "conceptScore": 0.9,
-  "spatialScore": 0.8,
-  "visualScore": 0.85,
-  "interactiveScore": 0.8,
-  "budgetScore": 0.85,
-  "feedback": "总体评价...",
-  "revisionTarget": "none" | "curator" | "spatial_designer" | "visual_designer" | "interactive_tech" | "budget_controller"
-}
-
-评估标准：
-- 0.9-1.0：优秀，可直接通过
-- 0.75-0.9：良好，有小问题可忽略
-- 0.6-0.75：合格，需要轻微修订
-- 0.6以下：不合格，需要大幅修订
-
-如果需要修订，revisionTarget 应该指向需要改进的节点。如果总体分数低于0.6，建议返回 curator 重新规划。
-如果有多个问题，优先选择分数最低的对应节点。`;
-
-    const humanPrompt = `请评估以下展陈设计方案：
-
-【项目信息】
-- 标题：${state.requirements.title}
-- 主题：${state.requirements.theme}
-- 预算：${state.requirements.budget.total} ${state.requirements.budget.currency}
-
-【当前迭代】第 ${state.iterationCount + 1} 次（最多 ${state.maxIterations} 次）
-
-【设计方案】
-${state.conceptPlan ? `
-1. 概念策划：
-   - 核心概念：${state.conceptPlan.concept}
-   - 叙事结构：${state.conceptPlan.narrative}
-   - 重点展品：${state.conceptPlan.keyExhibits.join(", ")}
-   - 观众动线：${state.conceptPlan.visitorFlow}
-` : "❌ 概念策划未完成"}
-
-${state.spatialLayout ? `
-2. 空间设计：
-   - 布局：${state.spatialLayout.layout}
-   - 参观路线：${state.spatialLayout.visitorRoute.join(" → ")}
-   - 功能区域：${state.spatialLayout.zones.map(z => `${z.name}(${z.area}㎡)`).join(", ")}
-` : "❌ 空间设计未完成"}
-
-${state.visualDesign ? `
-3. 视觉设计：
-   - 色彩方案：${state.visualDesign.colorScheme.join(", ")}
-   - 字体设计：${state.visualDesign.typography}
-   - 品牌元素：${state.visualDesign.brandElements.join(", ")}
-   - 视觉风格：${state.visualDesign.visualStyle}
-` : "❌ 视觉设计未完成"}
-
-${state.interactiveSolution ? `
-4. 互动技术：
-   - 使用技术：${state.interactiveSolution.technologies.join(", ")}
-   - 互动装置：${state.interactiveSolution.interactives.map(i => `${i.name}: ${i.description}`).join("; ")}
-` : "❌ 互动技术方案未完成"}
-
-${state.budgetEstimate ? `
-5. 预算估算：
-   - 总成本：${state.budgetEstimate.totalCost} ${state.requirements.budget.currency}
-   - 预算明细：${state.budgetEstimate.breakdown.map(b => `${b.category}: ${b.amount}`).join(", ")}
-   - 优化建议：${state.budgetEstimate.recommendations.join("; ")}
-` : "❌ 预算估算未完成"}
-
-${state.feedbackHistory.length > 0 ? `
-【历史反馈】
-${state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")}
-` : ""}
-
-请进行全面的质量评估，输出 JSON 格式的评估结果。`;
+    // 使用 PromptManager 渲染 prompt
+    const rendered = promptManager.render(
+      'supervisor',
+      'evaluateQuality',
+      {
+        title: state.requirements.title,
+        theme: state.requirements.theme,
+        budget: state.requirements.budget.total,
+        currency: state.requirements.budget.currency,
+        iterationCount: state.iterationCount + 1,
+        maxIterations: state.maxIterations,
+        // 概念策划字段
+        conceptPlan: !!state.conceptPlan,
+        concept: state.conceptPlan?.concept || '',
+        narrative: state.conceptPlan?.narrative || '',
+        keyExhibits: state.conceptPlan?.keyExhibits?.join(", ") || '',
+        visitorFlow: state.conceptPlan?.visitorFlow || '',
+        // 大纲细化字段（新增）
+        exhibitionOutline: !!state.exhibitionOutline,
+        zones: state.exhibitionOutline?.zones?.map(z => `${z.name}(${z.percentage}%)`).join(", ") || '',
+        exhibitsCount: state.exhibitionOutline?.exhibits?.length || 0,
+        interactivesCount: state.exhibitionOutline?.interactivePlan?.length || 0,
+        // 空间设计字段
+        spatialLayout: !!state.spatialLayout,
+        layout: state.spatialLayout?.layout || '',
+        visitorRoute: state.spatialLayout?.visitorRoute?.join(" → ") || '',
+        spatialZones: state.spatialLayout?.zones?.map(z => `${z.name}(${z.area}㎡)`).join(", ") || '',
+        // 视觉设计字段
+        visualDesign: !!state.visualDesign,
+        colorScheme: state.visualDesign?.colorScheme?.join(", ") || '',
+        typography: state.visualDesign?.typography || '',
+        brandElements: state.visualDesign?.brandElements?.join(", ") || '',
+        visualStyle: state.visualDesign?.visualStyle || '',
+        // 互动技术字段
+        interactiveSolution: !!state.interactiveSolution,
+        technologies: state.interactiveSolution?.technologies?.join(", ") || '',
+        interactives: state.interactiveSolution?.interactives?.map(i => `${i.name}: ${i.description}`).join("; ") || '',
+        // 预算估算字段
+        budgetEstimate: !!state.budgetEstimate,
+        totalCost: state.budgetEstimate?.totalCost?.toString() || '',
+        breakdown: state.budgetEstimate?.breakdown?.map(b => `${b.category}: ${b.amount}`).join(", ") || '',
+        recommendations: state.budgetEstimate?.recommendations?.join("; ") || '',
+        // 历史反馈
+        feedbackHistory: state.feedbackHistory.length > 0
+          ? state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")
+          : ""
+      }
+    );
 
     const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(humanPrompt)
+      new SystemMessage(rendered.system),
+      new HumanMessage(rendered.human)
     ];
 
     const response = await this.llm.invoke(messages);
@@ -265,13 +434,18 @@ ${state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")}
         return evaluation as QualityEvaluation;
       }
     } catch (error) {
-      console.warn("无法解析质量评估结果，使用默认值");
+      // 使用降级日志统计方法
+      this.logFallback('⚠️ [降级方案] 质量评估 JSON 解析失败，使用默认值', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        responsePreview: responseText.substring(0, 200)
+      });
     }
 
-    // 默认评估结果
-    return {
+    // 默认评估结果（降级方案）
+    const defaultEvaluation = {
       overallScore: 0.7,
       conceptScore: state.conceptPlan ? 0.7 : 0,
+      outlineScore: state.exhibitionOutline ? 0.7 : 0,
       spatialScore: state.spatialLayout ? 0.7 : 0,
       visualScore: state.visualDesign ? 0.7 : 0,
       interactiveScore: state.interactiveSolution ? 0.7 : 0,
@@ -279,6 +453,38 @@ ${state.feedbackHistory.map((fb, idx) => `第${idx + 1}次: ${fb}`).join("\n")}
       feedback: "无法解析详细评估，使用默认分数",
       revisionTarget: "none"
     };
+
+    this.logger.warn('⚠️ [降级方案] 使用默认质量评估结果', {
+      fallbackResult: JSON.stringify(defaultEvaluation, null, 2)
+    });
+
+    return defaultEvaluation;
+  }
+
+  /**
+   * 降级日志统计方法（防止日志洪泛）
+   */
+  private logFallback(message: string, data?: any): void {
+    this.fallbackCount++;
+
+    // 前 N 次正常输出日志
+    if (this.fallbackCount <= this.FALLBACK_LOG_THRESHOLD) {
+      this.logger.warn(message, data);
+    }
+    // 第 N+1 次输出警告
+    else if (this.fallbackCount === this.FALLBACK_LOG_THRESHOLD + 1) {
+      this.logger.warn('⚠️ [降级警告] 降级日志过于频繁，后续将抑制输出', {
+        totalFallbacks: this.fallbackCount,
+        message: '后续降级日志将每 ' + this.FALLBACK_STATS_INTERVAL + ' 次输出一次统计'
+      });
+    }
+    // 每隔 N 次输出统计
+    else if (this.fallbackCount % this.FALLBACK_STATS_INTERVAL === 0) {
+      this.logger.warn('📊 [降级统计] 累计降级次数', {
+        totalFallbacks: this.fallbackCount,
+        recentMessage: message
+      });
+    }
   }
 
   /**

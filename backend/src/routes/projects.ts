@@ -1,12 +1,13 @@
 import { Router } from 'express'
 import { projectQueries, workflowQueries, designResultQueries, agentExecutionQueries } from '../database/queries'
 import { createLogger } from '../utils/logger'
+import { optionalAuthenticate } from '../auth/middleware/auth.middleware'
 
 const router = Router()
 const logger = createLogger('PROJECTS-API')
 
 // 获取所有项目列表
-router.get('/', (req, res) => {
+router.get('/', optionalAuthenticate, (req, res) => {
   const startTime = Date.now()
 
   try {
@@ -14,13 +15,21 @@ router.get('/', (req, res) => {
     const offset = parseInt(req.query.offset as string) || 0
     const status = req.query.status as string
 
-    logger.info('获取项目列表', { limit, offset, status })
+    logger.info('获取项目列表', { limit, offset, status, userId: req.user?.userId })
 
     let projects
     if (status) {
+      // 如果有状态过滤，暂时使用原有方法（可以考虑添加用户过滤）
       projects = projectQueries.getByStatus(status)
     } else {
-      projects = projectQueries.getAll(limit, offset)
+      // 根据是否登录返回不同的数据
+      if (req.user) {
+        // 已登录：返回用户自己的项目 + 公开项目（user_id IS NULL）
+        projects = projectQueries.getAllForUser(req.user.userId, limit, offset)
+      } else {
+        // 未登录：返回所有项目（向后兼容）
+        projects = projectQueries.getAll(limit, offset)
+      }
     }
 
     responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
@@ -67,18 +76,25 @@ router.get('/stats', (req, res) => {
 })
 
 // 获取单个项目详情（包含工作流和结果）
-router.get('/:id', (req, res) => {
+router.get('/:id', optionalAuthenticate, (req, res) => {
   const startTime = Date.now()
 
   try {
     const { id } = req.params
 
-    logger.info('获取项目详情', { projectId: id })
+    logger.info('获取项目详情', { projectId: id, userId: req.user?.userId })
 
-    const project = projectQueries.getById(id)
+    let project
+    if (req.user) {
+      // 已登录：只能访问用户自己的项目或公开项目
+      project = projectQueries.getByIdForUser(id, req.user.userId)
+    } else {
+      // 未登录：可以访问所有项目（向后兼容）
+      project = projectQueries.getById(id)
+    }
 
     if (!project) {
-      logger.warn('项目不存在', { projectId: id })
+      logger.warn('项目不存在或无权访问', { projectId: id, userId: req.user?.userId })
       return res.status(404).json({
         success: false,
         error: 'Project not found'
@@ -124,25 +140,36 @@ router.get('/:id', (req, res) => {
 })
 
 // 删除项目
-router.delete('/:id', (req, res) => {
+router.delete('/:id', optionalAuthenticate, (req, res) => {
   const startTime = Date.now()
 
   try {
     const { id } = req.params
 
-    logger.info('删除项目', { projectId: id })
+    logger.info('删除项目', { projectId: id, userId: req.user?.userId })
 
-    const project = projectQueries.getById(id)
-
-    if (!project) {
-      logger.warn('项目不存在', { projectId: id })
-      return res.status(404).json({
-        success: false,
-        error: 'Project not found'
-      })
+    if (req.user) {
+      // 已登录：只能删除用户自己的项目
+      const deleted = projectQueries.deleteForUser(id, req.user.userId)
+      if (!deleted) {
+        logger.warn('项目不存在或无权删除', { projectId: id, userId: req.user.userId })
+        return res.status(404).json({
+          success: false,
+          error: 'Project not found or unauthorized'
+        })
+      }
+    } else {
+      // 未登录：可以删除任何项目（向后兼容，但生产环境应该禁止）
+      const project = projectQueries.getById(id)
+      if (!project) {
+        logger.warn('项目不存在', { projectId: id })
+        return res.status(404).json({
+          success: false,
+          error: 'Project not found'
+        })
+      }
+      projectQueries.delete(id)
     }
-
-    projectQueries.delete(id)
 
     responseTimeMonitor.recordResponse(req.originalUrl, req.method, Date.now() - startTime)
 

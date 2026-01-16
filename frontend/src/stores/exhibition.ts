@@ -28,6 +28,13 @@ export const useExhibitionStore = defineStore('exhibition', () => {
       type: 'curator',
       status: 'pending'
     },
+    // ⭐ 新增：大纲细化智能体
+    {
+      id: 'outline',
+      name: '大纲细化智能体',
+      type: 'outline',
+      status: 'pending'
+    },
     {
       id: 'spatial',
       name: '空间设计智能体',
@@ -65,6 +72,13 @@ export const useExhibitionStore = defineStore('exhibition', () => {
     {
       id: 'curator',
       name: '策划智能体',
+      type: 'single',
+      status: 'pending'
+    },
+    // ⭐ 新增：大纲细化智能体
+    {
+      id: 'outline',
+      name: '大纲细化智能体',
       type: 'single',
       status: 'pending'
     },

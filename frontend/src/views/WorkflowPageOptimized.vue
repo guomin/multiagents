@@ -38,7 +38,17 @@
         </div>
       </div>
       <div class="header-right">
-        <ElButton v-if="isProcessing" type="danger" @click="cancelWorkflow">
+        <!-- 继续执行按钮（单步暂停时显示） -->
+        <ElButton
+          v-if="isPausedAfterOutline"
+          type="success"
+          @click="handleContinueExecution"
+          size="large"
+        >
+          <ElIcon style="margin-right: 4px"><VideoPlay /></ElIcon>
+          继续执行
+        </ElButton>
+        <ElButton v-else-if="isProcessing" type="danger" @click="cancelWorkflow">
           <ElIcon style="margin-right: 4px"><Close /></ElIcon>
           取消
         </ElButton>
@@ -295,14 +305,16 @@
                 :key="group.id"
                 class="workflow-node"
                 :class="getNodeClass(group)"
+                @click="handleNodeClick(group)"
               >
                 <!-- 单个智能体 -->
-                <div v-if="group.type === 'single'" class="single-node">
+                <div v-if="group.type === 'single'" class="single-node" :class="{ 'clickable': group.status === 'completed' }">
                   <div class="node-indicator" :class="group.status"></div>
                   <span class="node-name">{{ group.name }}</span>
                   <ElTag :type="getTagType(group.status)" size="small">
                     {{ getStatusLabel(group.status) }}
                   </ElTag>
+                  <ElIcon v-if="group.status === 'completed'" class="view-icon" :size="16"><View /></ElIcon>
                 </div>
 
                 <!-- 并行组 -->
@@ -394,11 +406,71 @@
       :project-id="projectId"
       @decision="handleDecision"
     />
+
+    <!-- 智能体结果对话框 -->
+    <ElDialog
+      v-model="showAgentResultDialog"
+      :title="currentAgentResult?.name || '智能体结果'"
+      width="85%"
+      top="3vh"
+      :close-on-click-modal="false"
+      @close="closeAgentResultDialog"
+    >
+      <div v-if="loadingAgentResult" class="loading-container">
+        <ElIcon class="loading-icon" :size="48"><Loading /></ElIcon>
+        <p>正在加载智能体结果...</p>
+      </div>
+
+      <div v-else-if="currentAgentResult" class="result-container">
+        <!-- 策划方案 -->
+        <ConceptPlanDisplay
+          v-if="currentAgentResult.type === 'curator'"
+          :concept="currentAgentResult.data"
+        />
+
+        <!-- 大纲细化 -->
+        <ExhibitionOutlineDisplay
+          v-else-if="currentAgentResult.type === 'outline'"
+          :outline="currentAgentResult.data"
+        />
+
+        <!-- 空间布局 -->
+        <SpatialLayoutDisplay
+          v-else-if="currentAgentResult.type === 'spatial_designer'"
+          :layout="currentAgentResult.data"
+        />
+
+        <!-- 视觉设计 -->
+        <VisualDesignDisplay
+          v-else-if="currentAgentResult.type === 'visual_designer'"
+          :design="currentAgentResult.data"
+        />
+
+        <!-- 互动技术 -->
+        <InteractiveSolutionDisplay
+          v-else-if="currentAgentResult.type === 'interactive_tech'"
+          :solution="currentAgentResult.data"
+        />
+
+        <!-- 预算估算 -->
+        <BudgetEstimateDisplay
+          v-else-if="currentAgentResult.type === 'budget_controller'"
+          :budget="currentAgentResult.data"
+        />
+
+        <!-- 不支持的类型 -->
+        <div v-else class="unsupported-type">
+          <ElIcon class="icon" :size="64"><Document /></ElIcon>
+          <p>暂不支持该智能体类型的展示</p>
+          <p class="type-info">类型: {{ currentAgentResult.type }}</p>
+        </div>
+      </div>
+    </ElDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExhibitionStore } from '@/stores/exhibition'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -413,6 +485,12 @@ import LogPanel from '@/components/LogPanel.vue'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import HumanReviewDialogSimple from '@/components/HumanReviewDialogSimple.vue'
 import ExhibitionInfoCard from '@/components/ExhibitionInfoCard.vue'
+import ConceptPlanDisplay from '@/components/ConceptPlanDisplay.vue'
+import ExhibitionOutlineDisplay from '@/components/ExhibitionOutlineDisplay.vue'
+import SpatialLayoutDisplay from '@/components/SpatialLayoutDisplay.vue'
+import VisualDesignDisplay from '@/components/VisualDesignDisplay.vue'
+import InteractiveSolutionDisplay from '@/components/InteractiveSolutionDisplay.vue'
+import BudgetEstimateDisplay from '@/components/BudgetEstimateDisplay.vue'
 import {
   ArrowLeft,
   Close,
@@ -425,7 +503,8 @@ import {
   Connection,
   Folder,
   User,
-  RefreshRight
+  RefreshRight,
+  Loading
 } from '@element-plus/icons-vue'
 import type { AgentGroup, AgentStatus } from '@/types/exhibition'
 
@@ -445,11 +524,11 @@ const projectId = computed(() => exhibitionStore.currentProjectId) // 使用 sto
 
 // 工作流步骤
 const workflowSteps = ref([
-  { id: 'requirements', title: '需求', description: '填写展览基本信息', icon: Document },
-  { id: 'collaboration', title: '协作', description: '6个专业智能体协同设计', icon: VideoPlay },
-  { id: 'parallel_execution', title: '并行', description: '视觉设计和互动技术并行', icon: Connection },
-  { id: 'review', title: '审核', description: '人工审核质量并决策', icon: View },
-  { id: 'results', title: '结果', description: '查看完整设计方案', icon: CircleCheck }
+  { id: 'requirements', title: '需求', description: '填写展览基本信息', icon: markRaw(Document) },
+  { id: 'collaboration', title: '协作', description: '6个专业智能体协同设计', icon: markRaw(VideoPlay) },
+  { id: 'parallel_execution', title: '并行', description: '视觉设计和互动技术并行', icon: markRaw(Connection) },
+  { id: 'review', title: '审核', description: '人工审核质量并决策', icon: markRaw(View) },
+  { id: 'results', title: '结果', description: '查看完整设计方案', icon: markRaw(CircleCheck) }
 ])
 
 // 后端流程节点配置（与后端 exhibition-graph-with-human.ts 完全对应）
@@ -464,11 +543,19 @@ const backendWorkflowNodes = [
     description: '概念策划和叙事结构'
   },
   {
+    id: 'outline',
+    name: '大纲细化智能体',
+    type: 'single',
+    category: 'design',
+    order: 2,
+    description: '详细大纲策划和内容框架'
+  },
+  {
     id: 'spatial_designer',
     name: '空间设计智能体',
     type: 'single',
     category: 'design',
-    order: 2,
+    order: 3,
     description: '空间规划和布局设计'
   },
   {
@@ -476,7 +563,7 @@ const backendWorkflowNodes = [
     name: '并行设计',
     type: 'parallel',
     category: 'design',
-    order: 3,
+    order: 4,
     description: '视觉设计和互动技术并行执行',
     members: ['visual_designer', 'interactive_tech']
   },
@@ -504,7 +591,7 @@ const backendWorkflowNodes = [
     name: '预算控制智能体',
     type: 'single',
     category: 'control',
-    order: 4,
+    order: 5,
     description: '预算评估和成本控制'
   },
   {
@@ -512,7 +599,7 @@ const backendWorkflowNodes = [
     name: '主管审核',
     type: 'review',
     category: 'review',
-    order: 5,
+    order: 6,
     description: '质量评估和人工审核'
   },
   {
@@ -520,7 +607,7 @@ const backendWorkflowNodes = [
     name: '人工决策',
     type: 'decision',
     category: 'human',
-    order: 6,
+    order: 7,
     description: '人工审核决策（批准/修订）'
   },
   {
@@ -528,7 +615,7 @@ const backendWorkflowNodes = [
     name: '生成报告',
     type: 'final',
     category: 'output',
-    order: 7,
+    order: 8,
     description: '生成最终设计报告'
   }
 ]
@@ -538,6 +625,7 @@ const backendWorkflowNodes = [
 // 前端使用完整的节点 ID（spatial_designer, visual_designer, etc.）
 const agentIdMapping: Record<string, string> = {
   'curator': 'curator',
+  'outline': 'outline',
   'spatial': 'spatial_designer',
   'visual': 'visual_designer',
   'interactive': 'interactive_tech',
@@ -594,6 +682,12 @@ const performanceData = ref({
 const showReviewDialog = ref(false)
 const qualityEvaluation = ref<any>(null)
 
+// 智能体结果对话框
+const showAgentResultDialog = ref(false)
+const currentAgentResult = ref<any>(null)
+const loadingAgentResult = ref(false)
+const agentResultCache = ref<Record<string, any>>({})
+
 // 组件引用
 const performancePanelRef = ref()
 const logPanelRef = ref()
@@ -602,6 +696,13 @@ const logPanelRef = ref()
 const progressPercentage = computed(() => {
   const stepIndex = workflowSteps.value.findIndex(s => s.id === currentStep.value)
   return Math.round(((stepIndex + 1) / workflowSteps.value.length) * 100)
+})
+
+// 检测是否处于单步暂停状态
+const isPausedAfterOutline = computed(() => {
+  return exhibitionStore.waitingForHuman &&
+         (exhibitionStore as any).pausedAfterOutline === true &&
+         (exhibitionStore as any).currentStep === 'outline-completed-paused'
 })
 
 // 获取分数样式
@@ -750,6 +851,32 @@ const handleReject = async () => {
     await submitDecision('reject')
   } catch {
     // 用户取消
+  }
+}
+
+// 继续执行（单步调试模式）
+const handleContinueExecution = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确认继续执行后续流程？',
+      '单步调试',
+      {
+        confirmButtonText: '继续执行',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    )
+
+    ElMessage.info('正在继续执行...')
+
+    const response = await exhibitionAPI.continueExecution(projectId.value)
+    if (response.success) {
+      ElMessage.success('已继续执行')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.message || '继续执行失败')
+    }
   }
 }
 
@@ -926,11 +1053,27 @@ onMounted(() => {
     // 更新审核状态为已完成
     reviewStatus.value = 'completed'
 
+    // 🔑 关键：更新 human_decision 和 finalize 节点状态为已完成
+    const now = new Date()
+    agentStatusMap.value['human_decision'] = {
+      status: 'completed',
+      startTime: now,
+      endTime: now
+    }
+    agentStatusMap.value['finalize'] = {
+      status: 'completed',
+      startTime: now,
+      endTime: now
+    }
+
     // 更新完成步骤
     completedSteps.value = ['requirements', 'collaboration', 'parallel_execution', 'review', 'results']
 
     // 切换到最终结果步骤
     currentStep.value = 'results'
+
+    // 重新初始化 agentGroups 以反映最新状态
+    initializeAgentGroups()
 
     addLog('success', '✅ 工作流已完成')
     addLog('info', '📍 已自动切换到结果步骤')
@@ -942,15 +1085,39 @@ onMounted(() => {
     })
   }
 
+  // 监听单步暂停事件
+  const handleStepByStepPause = (event: any) => {
+    console.log('⏸️ 收到 step-by-step-pause 事件:', event.detail)
+    const { projectId: eventProjectId, paused, currentStep, message } = event.detail
+
+    // 只处理当前项目的事件
+    if (eventProjectId === projectId.value) {
+      addLog('warning', `⏸️ ${message}`)
+
+      // 更新状态
+      (exhibitionStore as any).waitingForHuman = paused
+      ;(exhibitionStore as any).pausedAfterOutline = paused
+      ;(exhibitionStore as any).currentStep = currentStep
+
+      ElNotification({
+        title: '单步调试暂停',
+        message,
+        type: 'info',
+        duration: 0
+      })
+    }
+  }
+
   // 注册所有事件监听器
   window.addEventListener('workflow-log', handleWorkflowLog)
   window.addEventListener('agentStatus', handleAgentStatus)
   window.addEventListener('waitingForHuman', handleWaitingForHuman)
   window.addEventListener('iterationUpdate', handleIterationUpdate)
   window.addEventListener('workflow-completed', handleWorkflowCompleted)
+  window.addEventListener('step-by-step-pause', handleStepByStepPause)
 
   console.log('✅ 所有事件监听器已注册')
-  console.log('监听的事件:', ['workflow-log', 'agentStatus', 'waitingForHuman', 'iterationUpdate', 'workflow-completed'])
+  console.log('监听的事件:', ['workflow-log', 'agentStatus', 'waitingForHuman', 'iterationUpdate', 'workflow-completed', 'step-by-step-pause'])
   console.log('======================================' )
 
   // 组件卸载时移除监听器
@@ -961,6 +1128,7 @@ onMounted(() => {
     window.removeEventListener('waitingForHuman', handleWaitingForHuman)
     window.removeEventListener('iterationUpdate', handleIterationUpdate)
     window.removeEventListener('workflow-completed', handleWorkflowCompleted)
+    window.removeEventListener('step-by-step-pause', handleStepByStepPause)
     console.log('✅ 监听器已清理')
   })
 })
@@ -1154,6 +1322,101 @@ const viewIteration = (id: string) => {
 
 const compareIteration = (id: string) => {
   addLog('info', `🔄 对比版本: ${id}`)
+}
+
+// ========== 智能体结果查看 ==========
+// 点击节点查看结果
+const handleNodeClick = async (node: any) => {
+  console.log('🖱️ 点击节点:', node)
+
+  // 只允许查看已完成的节点
+  if (node.status !== 'completed') {
+    ElMessage.warning('该智能体尚未完成，请等待执行完成后再查看结果')
+    return
+  }
+
+  // 映射节点ID到智能体类型
+  const agentType = mapNodeIdToAgentType(node.id)
+  if (!agentType) {
+    ElMessage.warning('该节点类型不支持查看结果')
+    return
+  }
+
+  addLog('info', `📂 正在加载智能体结果: ${node.name}`)
+
+  try {
+    loadingAgentResult.value = true
+
+    // 检查缓存
+    const cacheKey = `${projectId.value}_${agentType}`
+    if (agentResultCache.value[cacheKey]) {
+      console.log('✅ 从缓存获取结果')
+      currentAgentResult.value = {
+        name: node.name,
+        type: agentType,
+        data: agentResultCache.value[cacheKey]
+      }
+      showAgentResultDialog.value = true
+      return
+    }
+
+    // 调用API获取结果
+    const response = await exhibitionAPI.getAgentResult(projectId.value, agentType)
+
+    if (response.success) {
+      // 缓存结果
+      agentResultCache.value[cacheKey] = response.data.resultData
+
+      currentAgentResult.value = {
+        name: node.name,
+        type: agentType,
+        data: response.data.resultData
+      }
+
+      showAgentResultDialog.value = true
+      addLog('success', `✅ 已加载 ${node.name} 的结果`)
+    } else {
+      ElMessage.error(response.error || '获取结果失败')
+    }
+  } catch (error: any) {
+    console.error('❌ 获取智能体结果失败:', error)
+    ElMessage.error(error.message || '获取智能体结果失败，请稍后重试')
+    addLog('error', `❌ 获取 ${node.name} 结果失败: ${error.message}`)
+  } finally {
+    loadingAgentResult.value = false
+  }
+}
+
+// 映射节点ID到智能体类型
+const mapNodeIdToAgentType = (nodeId: string): string | null => {
+  const mapping: Record<string, string> = {
+    'curator': 'curator',
+    'outline': 'outline',
+    'spatial_designer': 'spatial_designer',
+    'visual_designer': 'visual_designer',
+    'interactive_tech': 'interactive_tech',
+    'budget_controller': 'budget_controller'
+  }
+  return mapping[nodeId] || null
+}
+
+// 获取结果组件名称
+const getResultComponent = (agentType: string) => {
+  const componentMap: Record<string, string> = {
+    'curator': 'ConceptPlanDisplay',
+    'outline': 'ExhibitionOutlineDisplay',
+    'spatial_designer': 'SpatialLayoutDisplay',
+    'visual_designer': 'VisualDesignDisplay',
+    'interactive_tech': 'InteractiveSolutionDisplay',
+    'budget_controller': 'BudgetEstimateDisplay'
+  }
+  return componentMap[agentType] || null
+}
+
+// 关闭结果对话框
+const closeAgentResultDialog = () => {
+  showAgentResultDialog.value = false
+  currentAgentResult.value = null
 }
 </script>
 
@@ -1813,5 +2076,121 @@ const compareIteration = (id: string) => {
   50% {
     box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
   }
+}
+
+/* 智能体节点可点击状态 */
+.single-node.clickable {
+  cursor: pointer;
+  position: relative;
+}
+
+.single-node.clickable:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+}
+
+.single-node.clickable .view-icon {
+  opacity: 0;
+  margin-left: 8px;
+  color: #3b82f6;
+  transition: all 0.3s;
+}
+
+.single-node.clickable:hover .view-icon {
+  opacity: 1;
+}
+
+/* 智能体结果对话框样式 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #6b7280;
+}
+
+.loading-icon {
+  animation: rotate 2s linear infinite;
+  color: #3b82f6;
+  margin-bottom: 16px;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.result-container {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.unsupported-type {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #6b7280;
+}
+
+.unsupported-type .icon {
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.unsupported-type p {
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.unsupported-type .type-info {
+  font-size: 14px;
+  color: #9ca3af;
+  font-family: 'Courier New', monospace;
+}
+
+/* 对话框自定义样式优化 */
+:deep(.el-dialog__body) {
+  padding: 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+:deep(.el-dialog__header) {
+  padding: 20px 20px 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+:deep(.el-dialog__title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* 滚动条美化 */
+.result-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.result-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.result-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.result-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 </style>

@@ -4,15 +4,87 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <div class="header-icon">
-            <ElIcon :size="32"><OfficeBuilding /></ElIcon>
+          <div class="header-logo">
+            <svg viewBox="0 0 48 48" class="logo-svg">
+              <!-- 背景圆形 -->
+              <defs>
+                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
+                </linearGradient>
+              </defs>
+
+              <!-- 展览馆建筑轮廓 -->
+              <path d="M8 40 L8 20 L24 8 L40 20 L40 40"
+                    fill="none"
+                    stroke="url(#logoGradient)"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"/>
+
+              <!-- 内部柱子 -->
+              <line x1="14" y1="24" x2="14" y2="36" stroke="url(#logoGradient)" stroke-width="2" stroke-linecap="round"/>
+              <line x1="24" y1="24" x2="24" y2="36" stroke="url(#logoGradient)" stroke-width="2" stroke-linecap="round"/>
+              <line x1="34" y1="24" x2="34" y2="36" stroke="url(#logoGradient)" stroke-width="2" stroke-linecap="round"/>
+
+              <!-- AI 元素 - 电路节点 -->
+              <circle cx="24" cy="16" r="3" fill="url(#accentGradient)"/>
+              <circle cx="14" cy="24" r="2" fill="url(#accentGradient)"/>
+              <circle cx="34" cy="24" r="2" fill="url(#accentGradient)"/>
+
+              <!-- AI 连接线 -->
+              <path d="M14 24 L24 16 L34 24"
+                    fill="none"
+                    stroke="url(#accentGradient)"
+                    stroke-width="1.5"
+                    stroke-linecap="round"/>
+
+              <!-- AI 核心 - 中央节点 -->
+              <circle cx="24" cy="30" r="4" fill="url(#accentGradient)"/>
+              <circle cx="24" cy="30" r="2" fill="#fff"/>
+
+              <!-- 底部基座 -->
+              <rect x="6" y="40" width="36" height="3" rx="1" fill="url(#logoGradient)"/>
+            </svg>
           </div>
           <div class="header-text">
-            <h1 class="page-title">展陈设计多智能体系统</h1>
-            <p class="page-subtitle">基于 LangGraph 和 DeepSeek 的智能协作平台</p>
+            <h1 class="page-title">ExhibitionAI</h1>
+            <p class="page-subtitle">展陈设计多智能体系统</p>
           </div>
         </div>
         <div class="header-actions">
+          <div v-if="authStore.isAuthenticated" class="user-info">
+            <ElDropdown trigger="click">
+              <div class="user-dropdown-trigger">
+                <ElAvatar :size="32" class="user-avatar">
+                  {{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}
+                </ElAvatar>
+                <span class="user-name">{{ authStore.user?.username || '用户' }}</span>
+                <ElIcon class="el-icon--right"><ArrowDown /></ElIcon>
+              </div>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem disabled>
+                    <ElIcon><User /></ElIcon>
+                    {{ authStore.user?.username || '用户' }}
+                    <ElTag v-if="authStore.isAdmin" type="danger" size="small" style="margin-left: 8px">管理员</ElTag>
+                  </ElDropdownItem>
+                  <ElDropdownItem v-if="authStore.isAdmin" @click="router.push('/admin/users')">
+                    <ElIcon><User /></ElIcon>
+                    用户管理
+                  </ElDropdownItem>
+                  <ElDropdownItem divided @click="handleLogout">
+                    <ElIcon><SwitchButton /></ElIcon>
+                    退出登录
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </div>
           <ElButton type="primary" size="large" @click="createNewExhibition">
             <ElIcon style="margin-right: 6px"><Plus /></ElIcon>
             创建新展览
@@ -65,16 +137,35 @@
         </div>
       </div>
 
-      <div class="stat-card stat-purple">
+      <div class="stat-card stat-gray">
         <div class="stat-icon">
-          <ElIcon :size="28"><Monitor /></ElIcon>
+          <ElIcon :size="28"><Clock /></ElIcon>
         </div>
         <div class="stat-content">
-          <p class="stat-label">智能体</p>
-          <p class="stat-value">{{ stats.agents }}</p>
+          <p class="stat-label">待处理</p>
+          <p class="stat-value">{{ stats.pending }}</p>
         </div>
-        <div class="stat-badge">全部在线</div>
+        <div class="stat-trend neutral">
+          <ElIcon><Minus /></ElIcon>
+          <span>-</span>
+        </div>
       </div>
+
+      <div class="stat-card stat-red">
+        <div class="stat-icon">
+          <ElIcon :size="28"><Warning /></ElIcon>
+        </div>
+        <div class="stat-content">
+          <p class="stat-label">错误</p>
+          <p class="stat-value">{{ stats.error }}</p>
+        </div>
+        <div class="stat-badge" v-if="stats.error > 0">需处理</div>
+      </div>
+    </div>
+
+    <!-- 3D 展览展示 -->
+    <div class="section-3d">
+      <Exhibition3D />
     </div>
 
     <!-- 快速操作 -->
@@ -115,34 +206,6 @@
 
     <!-- 主内容区 -->
     <div class="main-content">
-      <!-- 智能体状态 -->
-      <div class="panel agents-panel">
-        <div class="panel-header">
-          <h3 class="panel-title">
-            <ElIcon class="icon"><Monitor /></ElIcon>
-            智能体状态
-          </h3>
-          <ElTag type="success" size="small">运行正常</ElTag>
-        </div>
-        <div class="agents-grid">
-          <div
-            v-for="agent in agents"
-            :key="agent.id"
-            class="agent-card"
-            :class="`agent-${agent.status}`"
-          >
-            <div class="agent-status-dot" :class="`dot-${agent.status}`"></div>
-            <div class="agent-info">
-              <h4 class="agent-name">{{ agent.name }}</h4>
-              <p class="agent-role">{{ getAgentTypeLabel(agent.type) }}</p>
-            </div>
-            <div class="agent-icon">
-              {{ getAgentStatusIcon(agent.status) }}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- 最近项目 -->
       <div class="panel projects-panel">
         <div class="panel-header">
@@ -156,7 +219,19 @@
           </ElButton>
         </div>
         <div class="projects-list">
+          <div v-if="projectsLoading" class="loading-state">
+            <ElIcon class="is-loading" :size="32"><Loading /></ElIcon>
+            <p>加载中...</p>
+          </div>
+          <div v-else-if="recentProjects.length === 0" class="empty-state">
+            <ElIcon :size="48"><FolderOpened /></ElIcon>
+            <p>暂无项目</p>
+            <ElButton type="primary" @click="createNewExhibition">
+              创建第一个项目
+            </ElButton>
+          </div>
           <div
+            v-else
             v-for="project in recentProjects"
             :key="project.id"
             class="project-card"
@@ -202,13 +277,18 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExhibitionStore } from '@/stores/exhibition'
+import { useAuthStore } from '@/stores/auth'
+import { exhibitionAPI } from '@/api/exhibition'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import Exhibition3D from '@/components/Exhibition3D.vue'
 import {
-  OfficeBuilding,
   Plus,
   Folder,
   CircleCheck,
+  User,
+  ArrowDown,
+  SwitchButton,
   Loading,
-  Monitor,
   TrendCharts,
   Minus,
   ArrowRight,
@@ -216,60 +296,45 @@ import {
   Files,
   FolderOpened,
   Calendar,
-  Coin
+  Coin,
+  Clock,
+  Warning
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const exhibitionStore = useExhibitionStore()
+const authStore = useAuthStore()
 
 const stats = ref({
-  total: 12,
-  completed: 8,
-  running: 3,
+  total: 0,
+  completed: 0,
+  running: 0,
+  pending: 0,
+  error: 0,
   agents: 6
 })
 
-const agents = [
-  { id: 'curator', name: '策划智能体', type: 'curator', status: 'completed' },
-  { id: 'spatial', name: '空间设计智能体', type: 'spatial', status: 'completed' },
-  { id: 'visual', name: '视觉设计智能体', type: 'visual', status: 'running' },
-  { id: 'interactive', name: '互动技术智能体', type: 'interactive', status: 'pending' },
-  { id: 'budget', name: '预算控制智能体', type: 'budget', status: 'pending' },
-  { id: 'supervisor', name: '协调主管智能体', type: 'supervisor', status: 'pending' }
-]
+// 登出方法
+const handleLogout = async () => {
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
 
-const recentProjects = [
-  {
-    id: '1',
-    title: '数字艺术的未来',
-    theme: '探索人工智能与数字艺术的融合创新',
-    status: 'completed',
-    progress: 100,
-    createdAt: '2024-12-15',
-    budget: '500,000',
-    currency: 'CNY'
-  },
-  {
-    id: '2',
-    title: '科技与生活',
-    theme: '展示现代科技如何改变日常生活',
-    status: 'completed',
-    progress: 100,
-    createdAt: '2024-12-10',
-    budget: '200,000',
-    currency: 'CNY'
-  },
-  {
-    id: '3',
-    title: 'AI艺术创作展',
-    theme: '人工智能赋能艺术创作的新时代',
-    status: 'running',
-    progress: 60,
-    createdAt: '2024-12-18',
-    budget: '300,000',
-    currency: 'CNY'
+    await authStore.logout()
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  } catch (error) {
+    // 用户取消操作
   }
-]
+}
+
+const statsLoading = ref(false)
+
+const recentProjects = ref<any[]>([])
+const projectsLoading = ref(false)
 
 const createNewExhibition = () => {
   router.push('/create')
@@ -291,30 +356,61 @@ const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('zh-CN')
 }
 
-const getAgentTypeLabel = (type: string) => {
-  const labels = {
-    curator: '概念策划',
-    spatial: '空间设计',
-    visual: '视觉设计',
-    interactive: '互动技术',
-    budget: '预算控制',
-    supervisor: '协调主管'
-  }
-  return labels[type as keyof typeof labels] || type
+// 格式化预算显示
+const formatBudget = (budget: number, currency: string) => {
+  return budget.toLocaleString()
 }
 
-const getAgentStatusIcon = (status: string) => {
-  const icons = {
-    pending: '⏸️',
-    running: '🔄',
-    completed: '✅',
-    error: '❌'
+// 加载最近项目
+const loadRecentProjects = async () => {
+  projectsLoading.value = true
+  try {
+    const data = await exhibitionAPI.getProjects(3, 0)
+    recentProjects.value = data.map(project => ({
+      id: project.id,
+      title: project.title,
+      theme: project.theme,
+      status: project.status,
+      progress: project.status === 'completed' ? 100 : project.status === 'running' ? 60 : 0,
+      createdAt: project.created_at,
+      budget: formatBudget(project.budget_total, project.budget_currency),
+      currency: project.budget_currency
+    }))
+  } catch (error) {
+    console.error('加载最近项目失败:', error)
+    ElMessage.error('加载最近项目失败')
+  } finally {
+    projectsLoading.value = false
   }
-  return icons[status as keyof typeof icons] || '⏸️'
 }
 
-onMounted(() => {
+// 加载统计数据
+const loadStats = async () => {
+  statsLoading.value = true
+  try {
+    const data = await exhibitionAPI.getProjectStats()
+    stats.value = {
+      total: data.total,
+      completed: data.completed,
+      running: data.running,
+      pending: data.pending,
+      error: data.error,
+      agents: 6
+    }
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+    ElMessage.error('加载统计数据失败')
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+onMounted(async () => {
   exhibitionStore.initializeApp()
+  await Promise.all([
+    loadStats(),
+    loadRecentProjects()
+  ])
 })
 </script>
 
@@ -347,29 +443,72 @@ onMounted(() => {
   gap: 20px;
 }
 
-.header-icon {
-  width: 56px;
-  height: 56px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 12px;
+.header-logo {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.header-logo::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.header-logo:hover::before {
+  opacity: 1;
+}
+
+.header-logo:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+}
+
+.logo-svg {
+  width: 42px;
+  height: 42px;
+  position: relative;
+  z-index: 1;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1f2937;
-  margin: 0 0 4px 0;
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
 .page-subtitle {
   font-size: 14px;
   color: #6b7280;
   margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 /* 统计卡片 */
@@ -397,6 +536,7 @@ onMounted(() => {
 .stat-card:nth-child(2) { animation-delay: 0.2s; }
 .stat-card:nth-child(3) { animation-delay: 0.3s; }
 .stat-card:nth-child(4) { animation-delay: 0.4s; }
+.stat-card:nth-child(5) { animation-delay: 0.5s; }
 
 .stat-card:hover {
   transform: translateY(-4px);
@@ -431,6 +571,16 @@ onMounted(() => {
 .stat-purple .stat-icon {
   background: linear-gradient(135deg, #e9d5ff 0%, #d8b4fe 100%);
   color: #9333ea;
+}
+
+.stat-gray .stat-icon {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  color: #6b7280;
+}
+
+.stat-red .stat-icon {
+  background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+  color: #dc2626;
 }
 
 .stat-content {
@@ -474,6 +624,16 @@ onMounted(() => {
   border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
+}
+
+.stat-red .stat-badge {
+  background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%);
+}
+
+/* 3D 展览展示 */
+.section-3d {
+  margin-bottom: 24px;
+  animation: fadeInUp 0.6s ease-out 0.2s both;
 }
 
 /* 快速操作 */
@@ -556,16 +716,7 @@ onMounted(() => {
 
 /* 主内容区 */
 .main-content {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 24px;
   animation: fadeIn 0.5s ease-out 0.6s both;
-}
-
-@media (max-width: 1024px) {
-  .main-content {
-    grid-template-columns: 1fr;
-  }
 }
 
 .panel {
@@ -595,76 +746,6 @@ onMounted(() => {
 
 .panel-title .icon {
   color: #3b82f6;
-}
-
-/* 智能体网格 */
-.agents-grid {
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-}
-
-.agent-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 10px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  transition: all 0.3s ease;
-}
-
-.agent-card:hover {
-  background: #f3f4f6;
-  transform: translateX(4px);
-}
-
-.agent-status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dot-pending {
-  background: #d1d5db;
-}
-
-.dot-running {
-  background: #3b82f6;
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.dot-completed {
-  background: #10b981;
-}
-
-.dot-error {
-  background: #ef4444;
-}
-
-.agent-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.agent-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0 0 2px 0;
-}
-
-.agent-role {
-  font-size: 12px;
-  color: #6b7280;
-  margin: 0;
-}
-
-.agent-icon {
-  font-size: 20px;
-  flex-shrink: 0;
 }
 
 /* 项目列表 */
@@ -744,6 +825,32 @@ onMounted(() => {
   text-align: right;
 }
 
+/* 加载和空状态 */
+.loading-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  color: #9ca3af;
+}
+
+.loading-state p,
+.empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.empty-state {
+  color: #6b7280;
+}
+
+.empty-state .el-icon {
+  color: #d1d5db;
+}
+
 /* 动画 */
 @keyframes slideInDown {
   from {
@@ -776,12 +883,36 @@ onMounted(() => {
   }
 }
 
-@keyframes pulse-dot {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
-  }
+/* 用户信息样式 */
+.user-info {
+  display: flex;
+  align-items: center;
+  margin-right: 16px;
+}
+
+.user-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.user-dropdown-trigger:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
 }
 </style>

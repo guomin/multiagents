@@ -34,6 +34,8 @@ export function initializeDatabase() {
       start_date TEXT,
       end_date TEXT,
       special_requirements TEXT,
+      outline_draft TEXT,
+      step_by_step INTEGER DEFAULT 0,
       status TEXT DEFAULT 'pending',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -93,6 +95,109 @@ export function initializeDatabase() {
   `)
 
   console.log('✅ 数据库表初始化完成')
+
+  // 迁移：添加 outline_draft 列（如果不存在）
+  try {
+    const columns = db.prepare("PRAGMA table_info(projects)").all() as any[]
+    const hasOutlineDraft = columns.some(col => col.name === 'outline_draft')
+
+    if (!hasOutlineDraft) {
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN outline_draft TEXT
+      `)
+      console.log('✅ 数据库迁移完成：已添加 outline_draft 列')
+    }
+  } catch (error) {
+    console.warn('⚠️  数据库迁移警告:', error)
+  }
+
+  // 迁移：添加 step_by_step 列（如果不存在）
+  try {
+    const columns = db.prepare("PRAGMA table_info(projects)").all() as any[]
+    const hasStepByStep = columns.some(col => col.name === 'step_by_step')
+
+    if (!hasStepByStep) {
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN step_by_step INTEGER DEFAULT 0
+      `)
+      console.log('✅ 数据库迁移完成：已添加 step_by_step 列')
+    }
+  } catch (error) {
+    console.warn('⚠️  数据库迁移警告:', error)
+  }
+
+  // ========== 用户认证相关表和迁移 ==========
+
+  // 用户表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      full_name TEXT,
+      role TEXT DEFAULT 'user',
+      status TEXT DEFAULT 'active',
+      last_login_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `)
+
+  // 刷新令牌表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      revoked_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `)
+
+  // 创建用户相关索引
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
+  `)
+
+  console.log('✅ 用户认证表初始化完成')
+
+  // 迁移：为 projects 表添加 user_id 和 created_by 列（如果不存在）
+  try {
+    const columns = db.prepare("PRAGMA table_info(projects)").all() as any[]
+    const hasUserId = columns.some(col => col.name === 'user_id')
+
+    if (!hasUserId) {
+      db.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`)
+      console.log('✅ 数据库迁移完成：已添加 projects.user_id 列')
+    }
+  } catch (error) {
+    console.warn('⚠️  数据库迁移警告:', error)
+  }
+
+  try {
+    const columns = db.prepare("PRAGMA table_info(projects)").all() as any[]
+    const hasCreatedBy = columns.some(col => col.name === 'created_by')
+
+    if (!hasCreatedBy) {
+      db.exec(`ALTER TABLE projects ADD COLUMN created_by TEXT`)
+      console.log('✅ 数据库迁移完成：已添加 projects.created_by 列')
+    }
+  } catch (error) {
+    console.warn('⚠️  数据库迁移警告:', error)
+  }
+
+  // 创建 user_id 索引
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`)
+  } catch (error) {
+    console.warn('⚠️  创建索引警告:', error)
+  }
 }
 
 // 项目数据类型
@@ -109,7 +214,11 @@ export interface ProjectDB {
   start_date: string
   end_date: string
   special_requirements: string
+  outline_draft?: string
+  step_by_step?: number
   status: 'pending' | 'running' | 'completed' | 'error'
+  user_id?: string  // 用户ID（新增，可选以保持向后兼容）
+  created_by?: string  // 创建者ID（新增，可选）
   created_at: string
   updated_at: string
 }

@@ -1,18 +1,20 @@
 import { StateGraph, END, START } from "@langchain/langgraph";
 import { ExhibitionStateSchema, ExhibitionState } from "../types/exhibition";
 import { CuratorAgent } from "../agents/curator";
+import { OutlineAgent } from "../agents/outline-agent";
 import { SpatialDesignerAgent } from "../agents/spatial-designer";
 import { VisualDesignerAgent } from "../agents/visual-designer";
 import { InteractiveTechAgent } from "../agents/interactive-tech";
 import { BudgetControllerAgent } from "../agents/budget-controller";
 import { SupervisorAgent } from "../agents/supervisor";
-import { broadcastAgentStatus, broadcastProgress, broadcastLog, broadcastWaitingForHuman, broadcastIterationUpdate } from "../index";
+import { broadcastAgentStatus, broadcastProgress, broadcastLog, broadcastWaitingForHuman, broadcastIterationUpdate, broadcastStepByStepPause } from "../index";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger('EXHIBITION-GRAPH-HUMAN');
 
 export class ExhibitionDesignGraphWithHuman {
   private curator: CuratorAgent;
+  private outlineAgent: OutlineAgent; // 新增：大纲细化智能体
   private spatialDesigner: SpatialDesignerAgent;
   private visualDesigner: VisualDesignerAgent;
   private interactiveTech: InteractiveTechAgent;
@@ -21,6 +23,7 @@ export class ExhibitionDesignGraphWithHuman {
 
   constructor() {
     this.curator = new CuratorAgent();
+    this.outlineAgent = new OutlineAgent(); // 新增：初始化大纲细化智能体
     this.spatialDesigner = new SpatialDesignerAgent();
     this.visualDesigner = new VisualDesignerAgent();
     this.interactiveTech = new InteractiveTechAgent();
@@ -66,10 +69,75 @@ export class ExhibitionDesignGraphWithHuman {
       }
     };
 
-    // 2. 空间设计节点
-    const spatialDesignerNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
+    // 2. 大纲细化节点（新增）
+    const outlineNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
       if (!state.conceptPlan) {
-        throw new Error("概念策划尚未完成，无法进行空间设计");
+        throw new Error("概念策划尚未完成，无法进行大纲细化");
+      }
+
+      logger.info("📋 大纲细化智能体开始工作...");
+
+      broadcastAgentStatus('outline', { status: 'running', startTime: new Date() });
+      broadcastProgress(18, '大纲细化智能体工作中...');
+      broadcastLog('info', '📋 大纲细化智能体开始工作...');
+
+      try {
+        const exhibitionOutline = await this.outlineAgent.generateOutline(
+          state.requirements,
+          state.conceptPlan
+        );
+
+        broadcastAgentStatus('outline', { status: 'completed', endTime: new Date() });
+        broadcastLog('success', '✅ 大纲细化智能体完成工作');
+        logger.info("✅ 大纲细化智能体完成工作", {
+          zonesCount: exhibitionOutline.zones.length,
+          exhibitsCount: exhibitionOutline.exhibits.length,
+          interactivePlanCount: exhibitionOutline.interactivePlan.length
+        });
+
+        // 新增：单步模式暂停逻辑
+        if (state.requirements.stepByStepMode && !state.pausedAfterOutline) {
+          logger.info('[Workflow] 单步调试模式：在outline节点后暂停', { projectId: state.projectId });
+
+          // 广播暂停事件
+          broadcastStepByStepPause(state.projectId || '', {
+            paused: true,
+            currentStep: 'outline-completed-paused',
+            message: '大纲细化已完成，单步调试模式暂停，等待继续执行...'
+          });
+
+          broadcastLog('info', '🔵 大纲细化已完成，单步调试模式暂停，等待继续执行...');
+
+          // 返回特殊状态，触发暂停
+          return {
+            ...state,
+            exhibitionOutline,
+            waitingForHuman: true,
+            pausedAfterOutline: true,
+            currentStep: "outline-completed-paused",
+            messages: [...state.messages, "大纲细化已完成，单步调试模式暂停，等待继续执行..."],
+            revisionReason: undefined
+          };
+        }
+
+        return {
+          ...state,
+          exhibitionOutline,
+          currentStep: "大纲细化完成",
+          messages: [...state.messages, "大纲细化已完成"],
+          revisionReason: undefined
+        };
+      } catch (error) {
+        broadcastLog('error', `❌ 大纲细化智能体执行失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        logger.error("❌ 大纲细化智能体执行失败", error as Error);
+        throw error;
+      }
+    };
+
+    // 3. 空间设计节点
+    const spatialDesignerNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
+      if (!state.exhibitionOutline) {
+        throw new Error("展览大纲尚未完成，无法进行空间设计");
       }
 
       logger.info("🏗️ 空间设计智能体开始工作...");
@@ -79,9 +147,10 @@ export class ExhibitionDesignGraphWithHuman {
       broadcastLog('info', '🏗️ 空间设计智能体开始工作...');
 
       try {
+        // 修改：传入exhibitionOutline而不是conceptPlan
         const spatialLayout = await this.spatialDesigner.generateSpatialLayout(
           state.requirements,
-          state.conceptPlan,
+          state.exhibitionOutline,
           state.revisionReason || state.humanFeedback // 传递修订原因或人工反馈
         );
 
@@ -105,8 +174,8 @@ export class ExhibitionDesignGraphWithHuman {
 
     // 3. 视觉设计节点
     const visualDesignerNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      if (!state.conceptPlan) {
-        throw new Error("概念策划尚未完成，无法进行视觉设计");
+      if (!state.exhibitionOutline) {
+        throw new Error("展览大纲尚未完成，无法进行视觉设计");
       }
 
       logger.info("🎭 视觉设计智能体开始工作...");
@@ -118,7 +187,8 @@ export class ExhibitionDesignGraphWithHuman {
       try {
         const visualDesign = await this.visualDesigner.generateVisualDesign(
           state.requirements,
-          state.conceptPlan,
+          state.exhibitionOutline, // 修改：使用exhibitionOutline
+          state.spatialLayout,
           state.revisionReason || state.humanFeedback // 传递修订原因或人工反馈
         );
 
@@ -142,8 +212,8 @@ export class ExhibitionDesignGraphWithHuman {
 
     // 4. 互动技术节点
     const interactiveTechNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      if (!state.conceptPlan) {
-        throw new Error("概念策划尚未完成，无法进行互动技术设计");
+      if (!state.exhibitionOutline) {
+        throw new Error("展览大纲尚未完成，无法进行互动技术设计");
       }
 
       logger.info("💻 互动技术智能体开始工作...");
@@ -155,7 +225,8 @@ export class ExhibitionDesignGraphWithHuman {
       try {
         const interactiveSolution = await this.interactiveTech.generateInteractiveSolution(
           state.requirements,
-          state.conceptPlan,
+          state.exhibitionOutline, // 修改：使用exhibitionOutline
+          state.spatialLayout,
           state.revisionReason || state.humanFeedback // 传递修订原因或人工反馈
         );
 
@@ -179,8 +250,8 @@ export class ExhibitionDesignGraphWithHuman {
 
     // 并行节点：同时执行视觉设计和互动技术
     const parallelDesignsNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      if (!state.conceptPlan) {
-        throw new Error("概念策划尚未完成，无法进行设计");
+      if (!state.exhibitionOutline) { // 修改：检查exhibitionOutline
+        throw new Error("展览大纲尚未完成，无法进行设计");
       }
 
       logger.info("🔄 启动并行设计流程（视觉设计 + 互动技术）...");
@@ -189,8 +260,8 @@ export class ExhibitionDesignGraphWithHuman {
       broadcastLog('info', '🔄 启动并行设计流程（视觉设计 + 互动技术）...');
 
       try {
-        // 确保 conceptPlan 存在（类型检查）
-        const conceptPlan = state.conceptPlan;
+        // 确保 exhibitionOutline 存在（类型检查）
+        const exhibitionOutline = state.exhibitionOutline;
         const feedback = state.revisionReason || state.humanFeedback;
 
         // 并行执行两个设计任务
@@ -201,7 +272,8 @@ export class ExhibitionDesignGraphWithHuman {
             broadcastLog('info', '🎭 视觉设计智能体工作中...');
             const result = await this.visualDesigner.generateVisualDesign(
               state.requirements,
-              conceptPlan,
+              exhibitionOutline, // 修改：使用exhibitionOutline
+              state.spatialLayout,
               feedback
             );
             broadcastAgentStatus('visual', { status: 'completed', endTime: new Date() });
@@ -215,7 +287,8 @@ export class ExhibitionDesignGraphWithHuman {
             broadcastLog('info', '💻 互动技术智能体工作中...');
             const result = await this.interactiveTech.generateInteractiveSolution(
               state.requirements,
-              conceptPlan,
+              exhibitionOutline, // 修改：使用exhibitionOutline
+              state.spatialLayout,
               feedback
             );
             broadcastAgentStatus('interactive', { status: 'completed', endTime: new Date() });
@@ -262,7 +335,7 @@ export class ExhibitionDesignGraphWithHuman {
 
     // 5. 预算控制节点
     const budgetControllerNode = async (state: ExhibitionState): Promise<ExhibitionState> => {
-      if (!state.conceptPlan || !state.spatialLayout || !state.visualDesign || !state.interactiveSolution) {
+      if (!state.exhibitionOutline || !state.spatialLayout || !state.visualDesign || !state.interactiveSolution) { // 修改：检查exhibitionOutline
         throw new Error("所有设计方案尚未完成，无法进行预算估算");
       }
 
@@ -275,7 +348,7 @@ export class ExhibitionDesignGraphWithHuman {
       try {
         const budgetEstimate = await this.budgetController.generateBudgetEstimate(
           state.requirements,
-          state.conceptPlan!,
+          state.exhibitionOutline!, // 修改：使用exhibitionOutline
           state.spatialLayout!,
           state.visualDesign!,
           state.interactiveSolution!,
@@ -433,6 +506,17 @@ export class ExhibitionDesignGraphWithHuman {
             ...state,
             ...revisionUpdate,
             conceptPlan: undefined,
+            exhibitionOutline: undefined,
+            spatialLayout: undefined,
+            visualDesign: undefined,
+            interactiveSolution: undefined,
+            budgetEstimate: undefined
+          };
+        } else if (revisionTarget === "outline") {
+          return {
+            ...state,
+            ...revisionUpdate,
+            exhibitionOutline: undefined,
             spatialLayout: undefined,
             visualDesign: undefined,
             interactiveSolution: undefined,
@@ -505,6 +589,7 @@ export class ExhibitionDesignGraphWithHuman {
         return {
           ...state,
           currentStep: "项目完成",
+          finalReport,
           messages: [...state.messages, "最终报告已生成"]
         };
       } catch (error) {
@@ -516,6 +601,7 @@ export class ExhibitionDesignGraphWithHuman {
 
     // 添加节点
     workflow.addNode("curator", curatorNode);
+    workflow.addNode("outline", outlineNode); // 新增：大纲细化节点
     workflow.addNode("spatial_designer", spatialDesignerNode);
     workflow.addNode("parallel_designs", parallelDesignsNode); // 新增并行节点
     workflow.addNode("visual_designer", visualDesignerNode);  // 保留用于单独修订
@@ -543,7 +629,8 @@ export class ExhibitionDesignGraphWithHuman {
     );
 
     // 线性流程到审核点
-    workflow.addConditionalEdges("curator" as any, () => "spatial_designer");
+    workflow.addConditionalEdges("curator" as any, () => "outline"); // 修改：curator -> outline
+    workflow.addConditionalEdges("outline" as any, () => "spatial_designer"); // 新增：outline -> spatial_designer
 
     // 空间设计 → 并行设计
     workflow.addConditionalEdges("spatial_designer" as any, () => "parallel_designs");
@@ -602,6 +689,7 @@ export class ExhibitionDesignGraphWithHuman {
         if (state.needsRevision && revisionTarget) {
           const targetMap: Record<string, string> = {
             'curator': 'curator',
+            'outline': 'outline',
             'spatial_designer': 'spatial_designer',
             'parallel_designs': 'parallel_designs', // 同时修订视觉和互动技术
             'visual_designer': 'visual_designer',  // 单独修订视觉设计
@@ -627,6 +715,7 @@ export class ExhibitionDesignGraphWithHuman {
       },
       {
         curator: "curator" as any,
+        outline: "outline" as any,
         spatial_designer: "spatial_designer" as any,
         parallel_designs: "parallel_designs" as any, // 新增并行路由
         visual_designer: "visual_designer" as any,
@@ -643,11 +732,13 @@ export class ExhibitionDesignGraphWithHuman {
 
   async runExhibition(
     requirements: ExhibitionState["requirements"],
-    autoApprove: boolean = true
+    autoApprove: boolean = true,
+    projectId?: string
   ): Promise<{ graph: any; initialState: ExhibitionState }> {
     const graph = this.createGraph();
 
     const initialState: ExhibitionState = {
+      projectId,  // 添加项目ID
       requirements,
       currentStep: "开始项目",
       messages: ["展陈设计多智能体系统启动（人在回路模式）"],

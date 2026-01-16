@@ -6,6 +6,69 @@ const api = axios.create({
   timeout: 300000, // 5分钟超时
 })
 
+// 请求拦截器：自动添加 JWT token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// 响应拦截器：处理 401 错误和 token 刷新
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    // 如果是 401 错误且不是刷新 token 的请求
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      // 尝试刷新 token
+      try {
+        const refreshToken = localStorage.getItem('refresh_token')
+        if (refreshToken) {
+          const response = await axios.post(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'}/auth/refresh`,
+            { refreshToken }
+          )
+
+          const { accessToken, refreshToken: newRefreshToken } = response.data.data
+
+          // 保存新 token
+          localStorage.setItem('access_token', accessToken)
+          if (newRefreshToken) {
+            localStorage.setItem('refresh_token', newRefreshToken)
+          }
+
+          // 重试原始请求
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`
+          return api(originalRequest)
+        }
+      } catch (refreshError) {
+        // 刷新失败，清除 token 并跳转到登录页
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('user')
+
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+
+        return Promise.reject(refreshError)
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
+
 // 项目类型定义
 export interface Project {
   id: string
@@ -77,6 +140,17 @@ export const exhibitionAPI = {
     }
   },
 
+  // 继续执行（单步调试模式）
+  async continueExecution(projectId: string): Promise<any> {
+    try {
+      const response = await api.post(`/exhibition/continue/${projectId}`)
+      return response.data
+    } catch (error) {
+      console.error('Failed to continue execution:', error)
+      throw error
+    }
+  },
+
   // 获取工作流状态
   async getWorkflowStatus(id: string): Promise<any> {
     try {
@@ -99,16 +173,25 @@ export const exhibitionAPI = {
   },
 
   // 导出报告
-  async exportReport(id: string, format: 'pdf' | 'docx' | 'markdown'): Promise<Blob> {
+  async exportReport(id: string, format: 'pdf' | 'docx' | 'markdown', forceRegenerate: boolean = false): Promise<Blob> {
     try {
       const response = await api.get(`/exhibition/export/${id}`, {
-        params: { format },
-        responseType: 'blob'
+        params: { format, force: forceRegenerate ? 'true' : 'false' },
+        responseType: 'blob',
+        timeout: 120000 // 2分钟超时（PDF生成可能需要较长时间）
       })
       return response.data
-    } catch (error) {
-      console.error('Failed to export report:', error)
-      throw error
+    } catch (error: any) {
+      console.error('导出报告失败:', error)
+
+      // 提供更详细的错误信息
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('导出超时，请稍后重试')
+      } else if (error.response) {
+        throw new Error(`服务器错误: ${error.response.status}`)
+      } else {
+        throw error
+      }
     }
   },
 
@@ -165,6 +248,27 @@ export const exhibitionAPI = {
     } catch (error) {
       console.error('Failed to get project workflows:', error)
       throw error
+    }
+  },
+
+  // ============ 智能体结果 API ============
+
+  // 获取指定智能体的执行结果
+  async getAgentResult(projectId: string, agentType: string): Promise<any> {
+    try {
+      const response = await api.get(`/exhibition/agent-result/${projectId}/${agentType}`)
+      return response.data
+    } catch (error: any) {
+      console.error('Failed to get agent result:', error)
+
+      // 提供更详细的错误信息
+      if (error.response?.status === 404) {
+        throw new Error('智能体结果未找到，可能尚未完成执行')
+      } else if (error.response?.status === 400) {
+        throw new Error(`不支持的智能体类型: ${agentType}`)
+      } else {
+        throw new Error(error.response?.data?.details || '获取智能体结果失败')
+      }
     }
   }
 }

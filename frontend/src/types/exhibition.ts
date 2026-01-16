@@ -16,24 +16,27 @@ export interface ExhibitionRequirement {
     endDate: string;
   };
   specialRequirements: string[];
+  outlineDraft?: string; // 大纲草稿（可选），最大20000字符
   maxIterations?: number; // 新增：最大迭代次数
+  stepByStepMode?: boolean; // 单步执行模式（用于调试）
 }
 
 export interface QualityEvaluation {
   overallScore: number; // 总体质量分数 (0-1)
   conceptScore: number; // 概念策划分数
+  outlineScore: number; // 大纲细化分数
   spatialScore: number; // 空间设计分数
   visualScore: number; // 视觉设计分数
   interactiveScore: number; // 互动技术分数
   budgetScore: number; // 预算合理性分数
   feedback: string; // 反馈意见
-  revisionTarget: 'none' | 'curator' | 'spatial_designer' | 'parallel_designs' | 'visual_designer' | 'interactive_tech' | 'budget_controller';
+  revisionTarget: 'none' | 'curator' | 'outline' | 'spatial_designer' | 'parallel_designs' | 'visual_designer' | 'interactive_tech' | 'budget_controller';
 }
 
 export interface AgentStatus {
   id: string;
   name: string;
-  type: 'curator' | 'spatial' | 'visual' | 'interactive' | 'budget' | 'supervisor';
+  type: 'curator' | 'outline' | 'spatial' | 'visual' | 'interactive' | 'budget' | 'supervisor';
   status: 'pending' | 'running' | 'completed' | 'error';
   startTime?: Date;
   endTime?: Date;
@@ -54,6 +57,8 @@ export interface AgentGroup {
 export interface ExhibitionState {
   requirements: ExhibitionRequirement;
   conceptPlan?: ConceptPlan;
+  detailedOutline?: ExhibitionOutline; // 详细大纲（outline 智能体生成，使用 ExhibitionOutline 类型）
+  exhibitionOutline?: ExhibitionOutline; // 展览大纲（旧字段，保留兼容性）
   spatialLayout?: SpatialLayout;
   visualDesign?: VisualDesign;
   interactiveSolution?: InteractiveSolution;
@@ -75,6 +80,7 @@ export interface ExhibitionState {
   humanDecision?: 'approve' | 'revise' | 'reject'; // 人工决策
   humanFeedback?: string; // 人工反馈意见
   waitingForHuman?: boolean; // 是否等待人工审核
+  pausedAfterOutline?: boolean; // 是否在outline节点暂停后等待恢复
 }
 
 export interface ConceptPlan {
@@ -82,6 +88,68 @@ export interface ConceptPlan {
   narrative: string;
   keyExhibits: string[];
   visitorFlow: string;
+}
+
+// 展览大纲类型（新增）
+export interface ExhibitionOutline {
+  conceptPlan: ConceptPlan; // 引用策划方案
+
+  zones: Array<{
+    id: string;
+    name: string;
+    area: number;
+    percentage: number;
+    function: string;
+    exhibitIds: string[];
+    interactiveIds: string[];
+    budgetAllocation: number;
+  }>;
+
+  exhibits: Array<{
+    id: string;
+    name: string;
+    zoneId: string;
+    type: string;
+    protectionLevel: string;
+    showcaseRequirement: string;
+    dimensions?: {
+      length: number;
+      width: number;
+      height: number;
+    };
+    insurance: number;
+    transportCost: number;
+  }>;
+
+  interactivePlan: Array<{
+    id: string;
+    name: string;
+    zoneId: string;
+    type: string;
+    estimatedCost: number;
+    priority: 'high' | 'medium' | 'low';
+    description: string;
+  }>;
+
+  budgetAllocation: {
+    total: number;
+    breakdown: Array<{
+      category: string;
+      amount: number;
+      subCategories?: Array<{
+        name: string;
+        amount: number;
+      }>;
+    }>;
+  };
+
+  spaceConstraints: {
+    totalArea: number;
+    minZoneCount: number;
+    maxZoneCount: number;
+    minAisleWidth: number;
+    mainZoneRatio: number;
+  };
 }
 
 export interface SpatialLayout {
